@@ -1,0 +1,6 @@
+{
+  "financial": {
+    "model_version": "track2-v1",
+    "zones": {"customer": "S", "loan": "S", "credit": "S", "aml": "S", "approval": "S", "public": "O", "external_ai": "O"}
+  }
+}

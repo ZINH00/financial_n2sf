@@ -1,0 +1,271 @@
+name: fininst-a-baseline
+services:
+  customer_db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+    volumes:
+    - customer_data:/var/lib/postgresql/data
+    - ./db/init/00_schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
+    networks:
+    - flat_s
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U n2sf -d n2sf
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+  customer_app:
+    build:
+      context: ./services/app
+    environment:
+      SERVICE_NAME: customer
+      BUSINESS_ROLE: customer
+      ZONE: S
+      DB_HOST: customer_db
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+      PEP_URL: http://pep:8080
+    networks:
+    - flat_s
+    depends_on:
+    - customer_db
+    - pep
+    restart: unless-stopped
+  loan_db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+    volumes:
+    - loan_data:/var/lib/postgresql/data
+    - ./db/init/00_schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
+    networks:
+    - flat_s
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U n2sf -d n2sf
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+  loan_app:
+    build:
+      context: ./services/app
+    environment:
+      SERVICE_NAME: loan
+      BUSINESS_ROLE: loan
+      ZONE: S
+      DB_HOST: loan_db
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+      PEP_URL: http://pep:8080
+    networks:
+    - flat_s
+    depends_on:
+    - loan_db
+    - pep
+    restart: unless-stopped
+  credit_db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+    volumes:
+    - credit_data:/var/lib/postgresql/data
+    - ./db/init/00_schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
+    networks:
+    - flat_s
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U n2sf -d n2sf
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+  credit_app:
+    build:
+      context: ./services/app
+    environment:
+      SERVICE_NAME: credit
+      BUSINESS_ROLE: credit
+      ZONE: S
+      DB_HOST: credit_db
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+      PEP_URL: http://pep:8080
+    networks:
+    - flat_s
+    depends_on:
+    - credit_db
+    - pep
+    restart: unless-stopped
+  aml_db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+    volumes:
+    - aml_data:/var/lib/postgresql/data
+    - ./db/init/00_schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
+    networks:
+    - flat_s
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U n2sf -d n2sf
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+  aml_app:
+    build:
+      context: ./services/app
+    environment:
+      SERVICE_NAME: aml
+      BUSINESS_ROLE: aml
+      ZONE: S
+      DB_HOST: aml_db
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+      PEP_URL: http://pep:8080
+    networks:
+    - flat_s
+    depends_on:
+    - aml_db
+    - pep
+    restart: unless-stopped
+  approval_db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+    volumes:
+    - approval_data:/var/lib/postgresql/data
+    - ./db/init/00_schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
+    networks:
+    - flat_s
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U n2sf -d n2sf
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+  approval_app:
+    build:
+      context: ./services/app
+    environment:
+      SERVICE_NAME: approval
+      BUSINESS_ROLE: approval
+      ZONE: S
+      DB_HOST: approval_db
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+      PEP_URL: http://pep:8080
+    networks:
+    - flat_s
+    depends_on:
+    - approval_db
+    - pep
+    restart: unless-stopped
+  opa:
+    image: openpolicyagent/opa:1.4.2-static
+    command:
+    - run
+    - --server
+    - --addr=0.0.0.0:8181
+    - /policy/access.rego
+    - /policy/cds.rego
+    - /policy/data.json
+    volumes:
+    - ./policies/baseline.rego:/policy/access.rego:ro
+    - ./policies/baseline_cds.rego:/policy/cds.rego:ro
+    - ./policies/data.json:/policy/data.json:ro
+    networks:
+    - control
+    ports:
+    - 127.0.0.1:18181:8181
+    restart: unless-stopped
+  pep:
+    build:
+      context: ./services/pep
+    environment:
+      OPA_URL: http://opa:8181/v1/data/financial/access/decision
+      AUDIT_FILE: /logs/pep_audit_baseline.jsonl
+    volumes:
+    - ./results:/logs
+    networks:
+    - flat_s
+    - control
+    ports:
+    - 127.0.0.1:18080:8080
+    depends_on:
+    - opa
+    restart: unless-stopped
+  transfer_cds:
+    build:
+      context: ./services/cds
+    environment:
+      CDS_OPA_URL: http://opa:8181/v1/data/financial/cds/decision
+      PUBLIC_URL: http://public_app:8000
+      AI_URL: http://external_ai:8000
+      AUDIT_FILE: /logs/cds_audit_baseline.jsonl
+    volumes:
+    - ./results:/logs
+    networks:
+    - flat_s
+    - control
+    - o_zone
+    ports:
+    - 127.0.0.1:18090:8090
+    depends_on:
+    - opa
+    - public_app
+    - external_ai
+    restart: unless-stopped
+  public_app:
+    build:
+      context: ./services/external
+    environment:
+      SERVICE_NAME: public_service
+    networks:
+    - o_zone
+    restart: unless-stopped
+  external_ai:
+    build:
+      context: ./services/external
+    environment:
+      SERVICE_NAME: external_ai_stub
+    networks:
+    - o_zone
+    restart: unless-stopped
+networks:
+  flat_s:
+    driver: bridge
+  control:
+    driver: bridge
+  o_zone:
+    driver: bridge
+volumes:
+  customer_data: {}
+  loan_data: {}
+  credit_data: {}
+  aml_data: {}
+  approval_data: {}

@@ -1,0 +1,9 @@
+scenario_id,source_service,source_business,destination,method,path,role,device_trust,purpose,data_grade,expected_proposed
+U01,customer,customer,aml,GET,/records,analyst,trusted,case_processing,S,deny
+U02,customer,customer,approval,GET,/records,analyst,trusted,case_processing,S,deny
+U03,aml,aml,customer,GET,/records,analyst,trusted,risk_review,S,deny
+U04,approval,approval,credit,GET,/records,approver,trusted,approval,S,deny
+U05,loan,loan,customer,GET,/records,analyst,trusted,case_processing,S,deny
+U06,customer,customer,loan,GET,/records,analyst,untrusted,case_processing,S,deny
+U07,unknown,unknown,loan,GET,/records,analyst,trusted,case_processing,S,deny
+U08,customer,customer,loan,DELETE,/records,analyst,trusted,case_processing,S,deny

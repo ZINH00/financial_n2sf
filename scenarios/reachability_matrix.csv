@@ -1,0 +1,13 @@
+source_container,target_host,target_port,relationship
+customer_app,customer_db,5432,own_db
+customer_app,loan_db,5432,cross_business_db
+customer_app,credit_db,5432,cross_business_db
+customer_app,aml_db,5432,cross_business_db
+customer_app,approval_db,5432,cross_business_db
+loan_app,loan_db,5432,own_db
+loan_app,customer_db,5432,cross_business_db
+loan_app,credit_db,5432,cross_business_db
+loan_app,aml_db,5432,cross_business_db
+loan_app,approval_db,5432,cross_business_db
+aml_app,aml_db,5432,own_db
+aml_app,customer_db,5432,cross_business_db
