@@ -1,30 +1,32 @@
 control_area,n2sf_id,control_name,prototype_implementation,test_case,evidence
 권한,N2SF-LP-1,정보시스템 접근 권한 정의,role×source_business×destination×action×purpose 5-튜플(policies/data.json)과 OPA 정책 정의,A01-A05/U01-U08,OPA decision log
-단말,N2SF-DA-2,정보서비스 식별 및 제한,PEP가 HMAC 워크로드 서명으로 검증된 출발 업무만 호출을 허용,U07/U08,PEP audit
+단말,N2SF-DA-2,정보서비스 식별 및 제한,PEP가 SERVICE_MAP에 등록된 목적지로만 호출을 제한(미등록 목적지는 unknown_destination으로 즉시 거부),U07/U08,PEP audit
 단말,N2SF-DA-4,인증된 단말의 접속 관리,x-device-trust와 사용자·역할·목적을 정책 입력으로 사용,U06/C06,OPA decision log
 식별인증,N2SF-MA-2,사용자 계정 다중요소 인증,실험에서는 신뢰 헤더로 추상화하고 실제 적용 시 IdP/MFA 연계,U06/C06,요청 헤더 및 결정 로그
-분리,N2SF-SG-2,운영체제 수준 논리적 분리,Docker 컨테이너별 독립 프로세스·파일시스템,Reachability matrix (5x5=25),Docker inspect
+분리,N2SF-SG-3 / N2SF-IS-1 (요검증),소프트웨어 기반 분리 / 프로세스 격리,Docker 컨테이너는 호스트 커널을 공유하는 소프트웨어·프로세스 수준 격리이며 별도 OS 인스턴스 분리(N2SF-SG-2)는 아님 — 정확한 통제ID는 N2SF 가이드라인 원문 대조 필요,Reachability matrix (5x5=25),Docker inspect
 분리,N2SF-SG-4,영역·기능별 IP 체계 분리,업무별 Docker bridge network 구성(internal 네트워크),Reachability matrix (5x5=25),Docker network inspect
 분리,N2SF-SG-5,보안·운영 영역 분리,OPA control network와 업무 segment 분리,Reachability matrix (5x5=25),Docker network inspect
 분리,N2SF-SG-M4,사용자·단말·서비스별 접근 설정 및 모니터링,role×source_business×destination×action×purpose 5-튜플 기반 Rego 정책,A01-A05/U01-U08,policy file and log
 분리,N2SF-SG-M5,정책 위반 자동 알림·차단·기록,정책 거부 시 HTTP 403 및 JSONL 감사기록,U01-U08,PEP audit
+분리,N2SF-EB-3 (요검증),기본차단 후 필요 통신만 허용,proposed.rego의 default-deny + permissions 5-튜플 allowlist,A01-A05/U01-U08,policy file
+분리,N2SF-EB-5 (요검증),인가된 경유지를 통한 통신경로 강제,모든 업무 간 호출은 PEP만을 경유하도록 강제(직접 경로는 네트워크 계층에서 차단),Reachability matrix (cross_business_app),raw_reachability CSV
 정보흐름,N2SF-IF-1,동적 정보흐름 통제,요청별 사용자·역할·출발업무·목적업무·행위·목적·등급 평가,A01-A05/U01-U08,OPA decision log
 정보흐름,N2SF-IF-6,정보 필터링 규칙 설정,permissions 5-튜플과 S/O 전송 조건을 Rego로 정의,U01-U08/C01-C06,policy file
 정보흐름,N2SF-IF-8,비인가 정보 이동 차단,업무 간 비인가 경로 및 직접 S→O 전송 차단,U01-U08/C03,HTTP status and log
-정보흐름,N2SF-IF-9,송수신 주체 식별·인증,HMAC으로 검증된 source_business와 destination·user·role·action·purpose를 결정 입력으로 사용,A01-A05,OPA input
+정보흐름,N2SF-IF-9,송수신 주체 식별·인증,HMAC 워크로드 서명으로 검증된 source_business를 destination·user·role·action·purpose와 함께 결정 입력으로 사용(자칭 x-source-business는 신뢰하지 않음),A01-A05/U07/U08,OPA input / PEP audit
 정보흐름,N2SF-IF-14,등급 기반 정보흐름 통제,Transfer CDS에서 O 파생본만 외부 전송 허용,C01-C06,CDS audit
 정보흐름,N2SF-IF-M2,정보흐름 결정 로그,PEP와 CDS의 허용·거부·사유·request_id·decision_ms/upstream_ms/total_ms 기록,전체,JSONL audit
 교차영역,N2SF-CD-1,영역 간 정보흐름 검증,CDS에서 등급·목적·승인·콘텐츠 검증,C01-C06,CDS decision log
 교차영역,N2SF-CD-2,보안 레이블 사용,data_grade와 source_object_id를 전송 메타데이터로 사용,C01-C06,request and audit
-교차영역,N2SF-CD-4,중계 및 콘텐츠 무해화,실험에서는 정규식 기반 민감정보 검출로 축약; 실제 환경은 AV/CDR 연계,C04,pattern_hits
+교차영역,N2SF-CD-4,중계 및 콘텐츠 무해화,부분 구현(모의) — 정규식 기반 민감정보 검출만 수행하며 악성코드 검사·포맷 검증 등은 미구현; 실제 환경은 AV/CDR 연계 필요,C04,pattern_hits
 교차영역,N2SF-CD-9,우회경로 탐지,직접 DB·서비스 접근 가능성을 reachability test와 Blast Radius로 검증,Reachability matrix,raw_reachability CSV / blast_radius.csv
-교차영역,N2SF-CD-10,전송 무결성 검증,SHA-256 콘텐츠 해시 생성·기록,C01-C06,content_hash
+교차영역,N2SF-CD-10,전송 무결성 검증,무결성 확인 부분 구현 — SHA-256 콘텐츠 해시 생성·기록만 수행하며 전송실패 보호 등 전체 무결성 보장체계는 미구현,C01-C06,content_hash
 교차영역,N2SF-CD-11,등급 간 콘텐츠 정책,S 원본 금지·승인된 O 파생본 허용,C01-C04,CDS policy
 교차영역,N2SF-CD-12,등록 사용자·단말 접근,사용자·역할·단말 신뢰 조건,C05-C06,CDS decision log
 교차영역,N2SF-CD-M2,교차영역 로그 및 감사,모든 CDS 결정과 콘텐츠 해시 기록,C01-C06,CDS audit
 교차영역,N2SF-CD-M3,승인 워크플로,approved와 purpose 조건을 강제,C03/C05,CDS policy
 전송,N2SF-DT-1,전송 권한 확인,PEP/CDS에서 전송 전 정책 결정,전체,decision logs
-전송,N2SF-DT-2,통제 부재 시 정보교환 중단,OPA 오류·미인증·미승인·워크로드 신원 미검증 시 fail closed,U06-U08/C05-C06,HTTP 403/503
+전송,N2SF-DT-2,통제 부재 시 정보교환 중단,OPA·업무서비스 트랜스포트 오류·미인증·미승인·워크로드 신원 미검증·미등록 목적지 시 fail closed(opa_transport_error/upstream_transport_error/unknown_destination),U06-U08/C05-C06,HTTP 403/404/502/503
 전송,N2SF-DT-6,전송 무결성 확인,콘텐츠 해시 기록,C01-C06,content_hash
 데이터,N2SF-DU-M1,최소권한 데이터 접근,각 업무 서비스는 자신의 DB에만 직접 접근(Blast Radius=0 목표),Reachability matrix (5x5=25),raw_reachability CSV / blast_radius.csv
 데이터,N2SF-DU-M2,데이터 사용 모니터링,서비스·PEP·CDS 이벤트 로그,전체,JSONL audit

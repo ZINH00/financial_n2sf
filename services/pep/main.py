@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -72,16 +73,29 @@ def verify_workload(source_service: str, timestamp: str, signature: str) -> tupl
     return True, "ok", source_service
 
 
+async def refresh_policy_version(app: FastAPI, attempts: int = 1, delay_seconds: float = 1.0) -> None:
+    """docker compose의 short-form depends_on은 OPA가 "시작되었다"는 순서만 보장할
+    뿐 요청을 받을 준비가 됐다는 것까지 보장하지 않는다(OPA는 -static 이미지라 셸이
+    없어 Docker 레벨 healthcheck를 붙이기 어렵다). PEP 기동 시 여러 번 재시도하고,
+    그래도 실패해 policy_version이 "unknown"으로 남아 있으면 이후 요청이 들어올 때
+    한 번씩 다시 시도해 자연스럽게 회복한다."""
+    for attempt in range(attempts):
+        try:
+            response = await app.state.http_client.get(OPA_MODEL_VERSION_URL)
+            if response.status_code == 200:
+                app.state.policy_version = response.json().get("result", "unknown")
+                return
+        except httpx.HTTPError:
+            pass
+        if attempt < attempts - 1:
+            await asyncio.sleep(delay_seconds)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.http_client = httpx.AsyncClient(timeout=TIMEOUT)
     app.state.policy_version = "unknown"
-    try:
-        response = await app.state.http_client.get(OPA_MODEL_VERSION_URL)
-        if response.status_code == 200:
-            app.state.policy_version = response.json().get("result", "unknown")
-    except httpx.HTTPError:
-        pass
+    await refresh_policy_version(app, attempts=8, delay_seconds=1.0)
     try:
         yield
     finally:
@@ -123,13 +137,16 @@ async def proxy(
 ) -> Any:
     total_started = time.perf_counter()
     request_id = str(uuid.uuid4())
-    if destination not in SERVICE_MAP:
-        raise HTTPException(status_code=404, detail="unknown destination")
-
+    if request.app.state.policy_version == "unknown":
+        await refresh_policy_version(request.app)
     path_with_slash = "/" + path
     action = derive_action(request.method, path_with_slash)
     verified, identity_reason, verified_business = verify_workload(x_source_service, x_workload_timestamp, x_workload_signature)
 
+    # audit_base를 먼저 만들어두고, 이후 모든 거부·오류 경로(미등록 목적지 포함)가
+    # write_audit을 거쳐 예외를 던지도록 한다. README가 "허용/거부 모든 경로에서
+    # 동일한 필드 집합을 남긴다"고 명시하므로, 요청/응답 트랜스포트 실패나 목적지
+    # 오기입도 감사로그 없이 조용히 FastAPI 기본 오류로 빠지면 안 된다.
     audit_base = {
         "request_id": request_id,
         "experiment_run_id": x_experiment_run_id or "adhoc",
@@ -144,19 +161,25 @@ async def proxy(
         "policy_version": request.app.state.policy_version,
     }
 
-    if not verified:
+    def deny(reason: str, status_code: int, source_business: str | None, decision_ms: float = 0.0, upstream_ms: float = 0.0, upstream_status: int | None = None) -> None:
         total_ms = (time.perf_counter() - total_started) * 1000
         write_audit({
             **audit_base,
-            "source_business": None,
+            "source_business": source_business,
             "decision": "deny",
-            "reason": identity_reason,
-            "decision_ms": 0.0,
-            "upstream_ms": 0.0,
+            "reason": reason,
+            "decision_ms": decision_ms,
+            "upstream_ms": upstream_ms,
             "total_ms": total_ms,
-            "upstream_status": None,
+            "upstream_status": upstream_status,
         })
-        raise HTTPException(status_code=403, detail={"reason": identity_reason, "request_id": request_id})
+        raise HTTPException(status_code=status_code, detail={"reason": reason, "request_id": request_id})
+
+    if destination not in SERVICE_MAP:
+        deny("unknown_destination", 404, None)
+
+    if not verified:
+        deny(identity_reason, 403, None)
 
     input_doc = {
         "user": x_user,
@@ -174,26 +197,28 @@ async def proxy(
     }
     client: httpx.AsyncClient = request.app.state.http_client
     decision_started = time.perf_counter()
-    opa_response = await client.post(OPA_URL, json={"input": input_doc})
+    try:
+        opa_response = await client.post(OPA_URL, json={"input": input_doc})
+    except httpx.HTTPError:
+        deny("opa_transport_error", 503, verified_business, decision_ms=(time.perf_counter() - decision_started) * 1000)
     decision_ms = (time.perf_counter() - decision_started) * 1000
     if opa_response.status_code != 200:
-        total_ms = (time.perf_counter() - total_started) * 1000
-        write_audit({**audit_base, "source_business": verified_business, "decision": "deny", "reason": "opa_error", "decision_ms": decision_ms, "upstream_ms": 0.0, "total_ms": total_ms, "upstream_status": None})
-        raise HTTPException(status_code=503, detail="policy engine unavailable")
+        deny("opa_error", 503, verified_business, decision_ms=decision_ms)
     result = opa_response.json().get("result") or {}
     allow = bool(result.get("allow", False))
     reason = result.get("reason", "unspecified")
 
     if not allow:
-        total_ms = (time.perf_counter() - total_started) * 1000
-        write_audit({**audit_base, "source_business": verified_business, "decision": "deny", "reason": reason, "decision_ms": decision_ms, "upstream_ms": 0.0, "total_ms": total_ms, "upstream_status": None})
-        raise HTTPException(status_code=403, detail={"reason": reason, "decision_ms": decision_ms, "request_id": request_id})
+        deny(reason, 403, verified_business, decision_ms=decision_ms)
 
     body = await request.body()
     target = f"{SERVICE_MAP[destination]}/{path}"
     forward_headers = {"x-policy-user": x_user, "x-policy-role": x_role, "x-request-id": request_id}
     upstream_started = time.perf_counter()
-    upstream = await client.request(request.method, target, params=request.query_params, content=body, headers=forward_headers)
+    try:
+        upstream = await client.request(request.method, target, params=request.query_params, content=body, headers=forward_headers)
+    except httpx.HTTPError:
+        deny("upstream_transport_error", 502, verified_business, decision_ms=decision_ms, upstream_ms=(time.perf_counter() - upstream_started) * 1000)
     upstream_ms = (time.perf_counter() - upstream_started) * 1000
     total_ms = (time.perf_counter() - total_started) * 1000
     write_audit({

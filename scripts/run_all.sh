@@ -12,11 +12,12 @@ fi
 # "multiple default rules" 컴파일 오류가 난다(baseline_cds.rego/cds.rego도 동일).
 # 따라서 모드별로 실제 그 모드가 사용하는 정책 파일만 명시해서 검사한다.
 if [[ "$MODE" == "proposed" ]]; then
-  echo "[1/6] Validating policy unit tests (opa test, proposed policy only)"
+  echo "[1/6] Validating policy unit tests (opa test, proposed access + cds policy)"
   docker run --rm -v "$(pwd)/policies:/policies" openpolicyagent/opa:1.4.2-static \
-    test /policies/proposed.rego /policies/proposed_test.rego /policies/data.json
+    test /policies/proposed.rego /policies/proposed_test.rego \
+         /policies/cds.rego /policies/cds_test.rego /policies/data.json
 else
-  echo "[1/6] Skipping opa test for baseline (no baseline-specific unit tests exist; policies/proposed_test.rego targets proposed.rego)"
+  echo "[1/6] Skipping opa test for baseline (no baseline-specific unit tests exist; proposed_test.rego/cds_test.rego target the proposed policies)"
 fi
 
 echo "[2/6] Collecting environment metadata"

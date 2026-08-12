@@ -91,33 +91,43 @@ async def transfer(
         "source_object_id": request.source_object_id,
     }
     client: httpx.AsyncClient = app.state.http_client
-    decision_started = time.perf_counter()
-    opa_response = await client.post(OPA_URL, json={"input": input_doc})
-    decision_ms = (time.perf_counter() - decision_started) * 1000
-    result = (opa_response.json().get("result") if opa_response.status_code == 200 else None) or {}
-    allow = bool(result.get("allow", False))
-    reason = result.get("reason", "policy_denied")
-    audit_base = {
+    audit_prefix = {
         "request_id": request_id,
         "experiment_run_id": x_experiment_run_id or "adhoc",
         "scenario_id": x_scenario_id,
         "input": input_doc,
         "content_hash": digest,
         "pattern_hits": pattern_hits,
-        "decision_ms": decision_ms,
     }
-    if not allow:
+
+    def deny(reason: str, status_code: int, decision_ms: float, upstream_ms: float = 0.0, upstream_status: int | None = None) -> None:
         total_ms = (time.perf_counter() - total_started) * 1000
-        write_audit({**audit_base, "decision": "deny", "reason": reason, "upstream_ms": 0.0, "total_ms": total_ms, "upstream_status": None})
-        raise HTTPException(status_code=403, detail={"reason": reason, "pattern_hits": pattern_hits, "request_id": request_id})
+        write_audit({**audit_prefix, "decision_ms": decision_ms, "decision": "deny", "reason": reason, "upstream_ms": upstream_ms, "total_ms": total_ms, "upstream_status": upstream_status})
+        raise HTTPException(status_code=status_code, detail={"reason": reason, "pattern_hits": pattern_hits, "request_id": request_id})
+
+    decision_started = time.perf_counter()
+    try:
+        opa_response = await client.post(OPA_URL, json={"input": input_doc})
+    except httpx.HTTPError:
+        deny("cds_opa_transport_error", 503, (time.perf_counter() - decision_started) * 1000)
+    decision_ms = (time.perf_counter() - decision_started) * 1000
+    result = (opa_response.json().get("result") if opa_response.status_code == 200 else None) or {}
+    allow = bool(result.get("allow", False))
+    reason = result.get("reason", "policy_denied")
+    audit_base = {**audit_prefix, "decision_ms": decision_ms}
+    if not allow:
+        deny(reason, 403, decision_ms)
     target = PUBLIC_URL if request.destination == "public" else AI_URL
     upstream_started = time.perf_counter()
-    response = await client.post(f"{target}/ingest", json={
-        "source_object_id": request.source_object_id,
-        "content": request.content,
-        "content_hash": digest,
-        "purpose": request.purpose,
-    })
+    try:
+        response = await client.post(f"{target}/ingest", json={
+            "source_object_id": request.source_object_id,
+            "content": request.content,
+            "content_hash": digest,
+            "purpose": request.purpose,
+        })
+    except httpx.HTTPError:
+        deny("cds_upstream_transport_error", 502, decision_ms, upstream_ms=(time.perf_counter() - upstream_started) * 1000)
     upstream_ms = (time.perf_counter() - upstream_started) * 1000
     total_ms = (time.perf_counter() - total_started) * 1000
     write_audit({**audit_base, "decision": "allow", "reason": reason, "upstream_ms": upstream_ms, "total_ms": total_ms, "upstream_status": response.status_code})

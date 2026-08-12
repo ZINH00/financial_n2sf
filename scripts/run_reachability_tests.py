@@ -11,7 +11,7 @@ REACHABLE_RE = re.compile(r"reachable=(true|false)\s+elapsed_ms=([0-9.]+)\s+erro
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Measure direct database reachability from each business service.")
+    parser = argparse.ArgumentParser(description="Measure direct service (app) and database reachability from each business service.")
     parser.add_argument("--mode", choices=["baseline", "proposed"], required=True)
     args = parser.parse_args()
     compose = ROOT / f"compose.{args.mode}.yml"

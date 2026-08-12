@@ -197,12 +197,15 @@ pip install -r requirements.txt
 
 ```bash
 docker run --rm -v "$(pwd)/policies:/policies" openpolicyagent/opa:1.4.2-static \
-  test /policies/proposed.rego /policies/proposed_test.rego /policies/data.json
+  test /policies/proposed.rego /policies/proposed_test.rego \
+       /policies/cds.rego /policies/cds_test.rego /policies/data.json
 ```
 
 `policies/proposed_test.rego`가 정상 5-튜플 allow와 역할/목적/행위 불일치·미신뢰 단말·반대
-방향·무관 업무 조합의 deny를 검증한다. 이 테스트를 통과한 정책 버전만 실험에 사용한다
-(재현성 확보 — 결과가 우연히 잘못 작성된 Rego 때문이 아님을 보장).
+방향·무관 업무 조합의 deny를 검증하고, `policies/cds_test.rego`가 C01–C06에 대응하는 S/O
+전송 조건과 "S등급이면서 콘텐츠 검사에도 실패하는" 경계조건(두 deny 규칙이 동시에 참이 되어
+`eval_conflict_error`가 나지 않는지)을 검증한다. 이 테스트를 통과한 정책 버전만 실험에
+사용한다(재현성 확보 — 결과가 우연히 잘못 작성된 Rego 때문이 아님을 보장).
 
 `policies/` 디렉터리 전체(`opa test /policies`)를 한 번에 검사하지 않는다 — `baseline.rego`와
 `proposed.rego`가 둘 다 `package financial.access`에서 서로 다른 `default decision`을 정의하므로
@@ -213,7 +216,7 @@ docker run --rm -v "$(pwd)/policies:/policies" openpolicyagent/opa:1.4.2-static 
 ### 7.2 비교군 실행
 
 ```bash
-docker compose -f compose.baseline.yml up -d --build
+docker compose -f compose.baseline.yml up -d --build --wait
 ./scripts/run_all.sh baseline
 docker compose -f compose.baseline.yml down -v
 ```
@@ -221,10 +224,18 @@ docker compose -f compose.baseline.yml down -v
 ### 7.3 제안군 실행
 
 ```bash
-docker compose -f compose.proposed.yml up -d --build
+docker compose -f compose.proposed.yml up -d --build --wait
 ./scripts/run_all.sh proposed
 docker compose -f compose.proposed.yml down -v
 ```
+
+`--wait`는 Docker Compose가 healthcheck를 정의한 서비스(모든 DB, 업무 App, PEP, `public_app`,
+`external_ai`)의 상태가 실제로 `healthy`가 될 때까지 기다렸다가 반환하게 한다. DB→App, App/OPA→
+PEP처럼 짧은 형식(short-form) `depends_on`은 의존 서비스가 "시작"됐다는 순서만 보장할 뿐 요청을
+받을 준비(healthy)가 됐다는 것까지 보장하지 않으므로, `--wait` 없이 바로 `run_all.sh`를 실행하면
+컨테이너가 아직 뜨는 중일 때 첫 요청 몇 건이 연결 실패로 새는 경우가 있다. OPA(`-static` 이미지라
+셸이 없어 Docker 헬스체크 자체를 붙일 수 없음)만은 이 대상에서 빠지는데, 대신 PEP/CDS가 OPA
+호출을 자체적으로 재시도하도록 구현되어 있다(§4, §13의 `opa_transport_error`).
 
 `run_all.sh`는 다음을 순서대로 실행한다: ① `opa test` ② `collect_env.py`(환경 메타데이터 수집)
 ③ 업무흐름 정책 테스트(30회 반복) ④ S/O 전송 CDS 테스트(30회 반복) ⑤ App·DB 도달성 테스트(45개
@@ -368,7 +379,9 @@ python scripts/run_performance_tests.py --mode proposed --batches 30 --per-batch
 4. **Blast Radius** = 업무 i에서 직접 도달 가능한 **타 업무 DB 수**(`reachable == true`인
    cross_business_db 조합 수, 0~4). `blast_radius.csv`에 업무별 값, `experiment_summary.csv`에
    평균값(`blast_radius_mean`)을 싣는다.
-5. **Latency** = PEP 감사로그의 `decision_ms`(OPA 정책판단 자체) / `total_ms`(PEP가 요청을 받은
+5. **Latency** = PEP 감사로그의 `decision_ms`(PEP→PDP 정책결정 요청·응답 왕복시간 — PEP가
+   OPA에 HTTP 요청을 보내고 응답을 받기까지의 시간이며, 네트워크·직렬화/역직렬화를 포함한다.
+   OPA 내부에서 Rego 평가에만 걸린 순수 연산시간이 아니다) / `total_ms`(PEP가 요청을 받은
    시점부터 목적 workload의 응답을 받을 때까지 걸린 **PEP 처리 지연시간** — 클라이언트가
    체감하는 종단간(end-to-end) 지연시간이 아니라 PEP 내부 처리구간만을 가리킨다) — 배치
    median의 median/IQR/p95/부트스트랩 95% CI
@@ -410,15 +423,27 @@ device_trust/destination/data_grade/approved/purpose/content_safe/source_object_
 정책 입력 원문), `content_hash`(SHA-256), `pattern_hits`(정규식 탐지 결과), `decision`,
 `reason`, `decision_ms`, `upstream_ms`, `total_ms`, `upstream_status`.
 
-`policy_version`은 PEP가 기동 시 OPA의 `data.financial.model_version`을 조회해 캐시한 값이다
-(`policies/data.json`의 `model_version` 필드). 정책을 바꾸면 이 값을 함께 바꿔 어떤 정책
-버전으로 만든 결과인지 로그만으로 추적할 수 있게 한다.
+`reason` 필드는 정책 판단 결과(예: `role_purpose_action_mismatch`, `s_grade_direct_transfer_
+blocked`)뿐 아니라 PEP/CDS 자체의 구조적 실패도 구분해서 기록한다: `unknown_destination`
+(미등록 목적지), `opa_transport_error`/`cds_opa_transport_error`(OPA 연결 실패·타임아웃),
+`upstream_transport_error`/`cds_upstream_transport_error`(목적 workload 연결 실패). 이 경로들은
+감사로그 없이 FastAPI 기본 500 오류로 빠지지 않고, 다른 거부 사유와 동일한 필드 집합으로
+기록된 뒤 4xx/5xx로 실패한다(fail-closed).
+
+`policy_version`은 PEP가 OPA의 `data.financial.model_version`을 조회해 캐시한 값이다
+(`policies/data.json`의 `model_version` 필드). docker compose의 짧은 형식 `depends_on`은 OPA가
+"시작"됐다는 순서만 보장하고 요청을 받을 준비(healthy)까지는 보장하지 않으므로, PEP는 기동 시
+최대 8회(1초 간격) 재시도하고, 그래도 `unknown`으로 남아 있으면 이후 요청이 들어올 때마다 다시
+한번 조회해 자연스럽게 회복한다(§6의 healthcheck·`--wait` 설명도 참고). 정책을 바꾸면 이 값을
+함께 바꿔 어떤 정책 버전으로 만든 결과인지 로그만으로 추적할 수 있게 한다.
 
 ## 14. 정책 유닛 테스트 및 재현성 메타데이터
 
-- `policies/proposed_test.rego`: `opa test policies/`로 실행하는 정책 자체의 유닛 테스트.
-  정상 5-튜플 allow, 역할/목적/행위 불일치, 미신뢰 단말, 반대 방향, 무관 업무 조합의 deny를
-  검증한다. 이 테스트를 통과한 정책 버전만 실험에 사용한다.
+- `policies/proposed_test.rego`, `policies/cds_test.rego`: §7.1의 명령으로 실행하는 정책 자체의
+  유닛 테스트(`opa test policies/`로 디렉터리 전체를 한 번에 검사하지 않는다 — §7.1 참고).
+  정상 5-튜플 allow, 역할/목적/행위 불일치, 미신뢰 단말, 반대 방향, 무관 업무 조합의 deny,
+  그리고 S/O 전송 정책의 경계조건(S등급+콘텐츠 검사 실패 동시 발생 시 규칙 충돌이 나지
+  않는지)을 검증한다. 이 테스트를 통과한 정책 버전만 실험에 사용한다.
 - `scripts/collect_env.py`: CPU/코어/RAM/OS, Docker Engine·Compose 버전, OPA·PostgreSQL 이미지
   digest, Python 버전, Git commit SHA, `policies/*.rego`·`data.json`·`scenarios/*.csv`의
   SHA-256 해시, 실행 시각(UTC)을 `results/experiment_metadata.json`에 기록한다. 논문 Table
@@ -432,7 +457,8 @@ device_trust/destination/data_grade/approved/purpose/content_safe/source_object_
   체계로 대체해야 한다. 이 실험의 비밀키는 compose 파일에 평문으로 존재하는 lab 전용 값이다.
 - `customer_app`~`approval_app`의 18001–18005 포트는 테스트 하네스가 "실제 출발 업무"로서
   요청을 만들기 위한 진입점이며, 운영환경의 접근경로를 재현하지 않는다. 업무 간 횡적 이동
-  가능성은 이 포트가 아니라 §11의 Cross-Business DB Reachability Rate·Blast Radius로 측정한다.
+  가능성은 이 포트가 아니라 §11의 Cross-Business Service/DB Reachability Rate·Blast Radius로
+  측정한다.
 - 정규식 콘텐츠 검사(Transfer CDS)는 실제 DLP·백신·CDR의 대체물이 아니라 통제 흐름을 재현한
   모의 기능이다.
 - OPA 입력의 `role`/`device_trust`/`purpose`는 실제 환경의 IdP, MFA, EDR, NAC, IAM/PAM 연동
