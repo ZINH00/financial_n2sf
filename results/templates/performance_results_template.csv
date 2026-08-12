@@ -1,1 +1,1 @@
-mode,request_id,status_code,latency_ms,error
+mode,experiment_run_id,flow,batch_id,request_id,status_code,latency_ms,error

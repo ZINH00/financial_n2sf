@@ -1,7 +1,6 @@
-scenario_id,source_service,source_business,destination,method,path,role,device_trust,purpose,data_grade,expected_proposed
-A01,customer,customer,loan,GET,/records,analyst,trusted,case_processing,S,allow
-A02,loan,loan,credit,GET,/records,analyst,trusted,risk_review,S,allow
-A03,loan,loan,aml,GET,/records,analyst,trusted,risk_review,S,allow
-A04,loan,loan,approval,GET,/records,approver,trusted,approval,S,allow
-A05,credit,credit,approval,GET,/records,reviewer,trusted,approval,S,allow
-A06,approval,approval,loan,GET,/records,approver,trusted,approved_workflow,S,allow
+scenario_id,entry_point,source_service,source_business,destination,method,path,action,role,device_trust,purpose,data_grade,claimed_source_service,claimed_source_business,signature_mode,violation_type,expected_baseline,expected_proposed
+A01,call,loan,loan,customer,GET,/customer-profile/CASE-0001,read_customer_profile,loan_reviewer,trusted,loan_screening,S,,,,,allow,allow
+A02,call,loan,loan,credit,POST,/credit-assessment,request_credit_assessment,loan_reviewer,trusted,loan_screening,S,,,,,allow,allow
+A03,call,loan,loan,aml,POST,/aml-screening,request_aml_screening,loan_reviewer,trusted,loan_screening,S,,,,,allow,allow
+A04,call,loan,loan,approval,POST,/approval-requests,submit_for_approval,loan_reviewer,trusted,loan_approval,S,,,,,allow,allow
+A05,call,approval,approval,loan,GET,/loan-review/CASE-0001,read_review_package,loan_approver,trusted,loan_approval,S,,,,,allow,allow

@@ -31,8 +31,11 @@ services:
       POSTGRES_USER: n2sf
       POSTGRES_PASSWORD: n2sf_lab_pw
       PEP_URL: http://pep:8080
+      WORKLOAD_SECRET: wl-customer-8f2a1c
     networks:
     - flat_s
+    ports:
+    - 127.0.0.1:18001:8000
     depends_on:
     - customer_db
     - pep
@@ -68,8 +71,11 @@ services:
       POSTGRES_USER: n2sf
       POSTGRES_PASSWORD: n2sf_lab_pw
       PEP_URL: http://pep:8080
+      WORKLOAD_SECRET: wl-loan-3d9e47
     networks:
     - flat_s
+    ports:
+    - 127.0.0.1:18002:8000
     depends_on:
     - loan_db
     - pep
@@ -105,8 +111,11 @@ services:
       POSTGRES_USER: n2sf
       POSTGRES_PASSWORD: n2sf_lab_pw
       PEP_URL: http://pep:8080
+      WORKLOAD_SECRET: wl-credit-71b0aa
     networks:
     - flat_s
+    ports:
+    - 127.0.0.1:18003:8000
     depends_on:
     - credit_db
     - pep
@@ -142,8 +151,11 @@ services:
       POSTGRES_USER: n2sf
       POSTGRES_PASSWORD: n2sf_lab_pw
       PEP_URL: http://pep:8080
+      WORKLOAD_SECRET: wl-aml-c4517f
     networks:
     - flat_s
+    ports:
+    - 127.0.0.1:18004:8000
     depends_on:
     - aml_db
     - pep
@@ -179,8 +191,11 @@ services:
       POSTGRES_USER: n2sf
       POSTGRES_PASSWORD: n2sf_lab_pw
       PEP_URL: http://pep:8080
+      WORKLOAD_SECRET: wl-approval-902bd3
     networks:
     - flat_s
+    ports:
+    - 127.0.0.1:18005:8000
     depends_on:
     - approval_db
     - pep
@@ -209,6 +224,7 @@ services:
     environment:
       OPA_URL: http://opa:8181/v1/data/financial/access/decision
       AUDIT_FILE: /logs/pep_audit_baseline.jsonl
+      WORKLOAD_SECRETS: '{"customer":"wl-customer-8f2a1c","loan":"wl-loan-3d9e47","credit":"wl-credit-71b0aa","aml":"wl-aml-c4517f","approval":"wl-approval-902bd3"}'
     volumes:
     - ./results:/logs
     networks:

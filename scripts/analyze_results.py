@@ -2,11 +2,38 @@ from __future__ import annotations
 
 import argparse
 import glob
+import statistics
+from collections import defaultdict
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
-from scipy.stats import fisher_exact, mannwhitneyu
+from scipy.stats import mannwhitneyu
+
+from common import bootstrap_ci, iqr, percentile, read_jsonl, to_bool_series
+
+# README 6대 핵심 지표가 여기서 산출하는 값과 항상 일치하도록 관리한다:
+# Authorized Flow Success Rate, Unauthorized Flow Block Rate,
+# Cross-Business DB Reachability Rate, Blast Radius,
+# Policy Decision / End-to-End Latency, Audit Completeness.
+
+REQUIRED_AUDIT_FIELDS = [
+    "request_id", "experiment_run_id", "scenario_id", "user_role",
+    "verified_workload_identity", "source_business", "destination", "action",
+    "purpose", "data_grade", "policy_version", "decision", "reason",
+    "decision_ms", "upstream_ms", "total_ms", "upstream_status", "ts",
+]
+
+PALETTE = {
+    "surface": "#fcfcfb",
+    "text_primary": "#0b0b0b",
+    "text_secondary": "#52514e",
+    "muted": "#898781",
+    "gridline": "#e1e0d9",
+    "axis": "#c3c2b7",
+    "baseline": "#2a78d6",
+    "proposed": "#eb6834",
+}
 
 
 def latest(pattern: str) -> Path | None:
@@ -15,7 +42,169 @@ def latest(pattern: str) -> Path | None:
 
 
 def rate(series: pd.Series, value: str) -> float:
-    return float((series == value).mean()) if len(series) else float("nan")
+    return float((series.astype(str) == value).mean()) if len(series) else float("nan")
+
+
+def blast_radius(reach_df: pd.DataFrame) -> pd.DataFrame:
+    """업무별 Blast Radius = 해당 업무 컨테이너에서 직접 도달 가능한 타 업무 DB 수."""
+    cross = reach_df[reach_df["relationship"] == "cross_business_db"].copy()
+    cross["source_business"] = cross["source_container"].str.replace("_app", "", regex=False)
+    cross["reachable_bool"] = to_bool_series(cross["reachable"])
+    per_business = cross.groupby("source_business")["reachable_bool"].sum().reset_index()
+    per_business.columns = ["source_business", "blast_radius"]
+    return per_business
+
+
+def audit_completeness(policy_df: pd.DataFrame, audit_rows: list[dict]) -> float:
+    """필수 필드를 모두 포함하고 request_id/scenario_id로 상관관계가 확인된
+    감사로그 수 / 전체 요청 수."""
+    if policy_df.empty:
+        return float("nan")
+    index: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for row in audit_rows:
+        key = (str(row.get("scenario_id", "")), str(row.get("experiment_run_id", "")))
+        index[key].append(row)
+    matched = 0
+    for _, prow in policy_df.iterrows():
+        key = (str(prow["scenario_id"]), str(prow["experiment_run_id"]))
+        candidates = index.get(key, [])
+        if any(all(field in c for field in REQUIRED_AUDIT_FIELDS) for c in candidates):
+            matched += 1
+    return matched / len(policy_df)
+
+
+def batch_latency_stats(audit_rows: list[dict], flow_prefix: str = "PERF-") -> pd.DataFrame:
+    """PEP 감사로그에서 성능 시나리오(scenario_id=PERF-<flow>-b<NNN>)의 허용된
+    요청만 골라 배치별 median(decision_ms, total_ms)을 산출한다."""
+    by_batch: dict[tuple[str, int], dict[str, list[float]]] = defaultdict(lambda: {"decision_ms": [], "total_ms": []})
+    for row in audit_rows:
+        scenario_id = str(row.get("scenario_id", ""))
+        if not scenario_id.startswith(flow_prefix) or "-b" not in scenario_id or row.get("decision") != "allow":
+            continue
+        flow_name, _, batch_part = scenario_id[len(flow_prefix):].rpartition("-b")
+        try:
+            batch_id = int(batch_part)
+        except ValueError:
+            continue
+        by_batch[(flow_name, batch_id)]["decision_ms"].append(float(row["decision_ms"]))
+        by_batch[(flow_name, batch_id)]["total_ms"].append(float(row["total_ms"]))
+    records = []
+    for (flow_name, batch_id), values in sorted(by_batch.items()):
+        if not values["decision_ms"]:
+            continue
+        records.append({
+            "flow": flow_name,
+            "batch_id": batch_id,
+            "decision_ms_median": statistics.median(values["decision_ms"]),
+            "total_ms_median": statistics.median(values["total_ms"]),
+            "n": len(values["decision_ms"]),
+        })
+    return pd.DataFrame(records)
+
+
+def summarize_latency(batch_df: pd.DataFrame, column: str) -> dict[str, float]:
+    if column not in batch_df or batch_df.empty:
+        return {"median": float("nan"), "iqr": float("nan"), "p95": float("nan"), "ci_low": float("nan"), "ci_high": float("nan"), "n_batches": 0}
+    values = batch_df[column].dropna().tolist()
+    ci_low, ci_high = bootstrap_ci(values)
+    return {
+        "median": statistics.median(values) if values else float("nan"),
+        "iqr": iqr(values),
+        "p95": percentile(values, 0.95),
+        "ci_low": ci_low,
+        "ci_high": ci_high,
+        "n_batches": len(values),
+    }
+
+
+def _style_axes(ax) -> None:
+    ax.set_facecolor(PALETTE["surface"])
+    ax.figure.set_facecolor(PALETTE["surface"])
+    for spine in ("top", "right", "left"):
+        ax.spines[spine].set_visible(False)
+    ax.spines["bottom"].set_color(PALETTE["axis"])
+    ax.tick_params(colors=PALETTE["text_secondary"])
+    ax.yaxis.grid(True, color=PALETTE["gridline"], linewidth=0.8)
+    ax.set_axisbelow(True)
+    ax.xaxis.label.set_color(PALETTE["text_primary"])
+    ax.yaxis.label.set_color(PALETTE["text_primary"])
+    ax.title.set_color(PALETTE["text_primary"])
+
+
+def _bar_labels(ax, bars, fmt) -> None:
+    for bar in bars:
+        height = bar.get_height()
+        ax.annotate(fmt(height), (bar.get_x() + bar.get_width() / 2, height), textcoords="offset points", xytext=(0, 4), ha="center", fontsize=9, color=PALETTE["text_primary"])
+
+
+def plot_security_effectiveness(summary: pd.DataFrame, results: Path) -> None:
+    metrics = ["authorized_flow_success_rate", "unauthorized_flow_block_rate", "cross_business_db_reachability_rate"]
+    labels = ["Authorized Flow\nSuccess Rate", "Unauthorized Flow\nBlock Rate", "Cross-Business DB\nReachability Rate"]
+    plot_df = summary.set_index("metric").loc[metrics]
+    x = list(range(len(metrics)))
+    width = 0.32
+    fig, ax = plt.subplots(figsize=(8, 5))
+    bars_b = ax.bar([i - width / 2 for i in x], plot_df["baseline"], width, label="Baseline (flat network)", color=PALETTE["baseline"])
+    bars_p = ax.bar([i + width / 2 for i in x], plot_df["proposed"], width, label="Proposed (role-based microsegmentation)", color=PALETTE["proposed"])
+    _bar_labels(ax, bars_b, lambda h: f"{h*100:.0f}%")
+    _bar_labels(ax, bars_p, lambda h: f"{h*100:.0f}%")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, fontsize=9)
+    ax.set_ylabel("Rate")
+    ax.set_ylim(0, 1.15)
+    ax.legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=2)
+    _style_axes(ax)
+    fig.tight_layout()
+    fig.savefig(results / "security_effectiveness.png", dpi=200, bbox_inches="tight", facecolor=fig.get_facecolor())
+    plt.close(fig)
+
+
+def plot_blast_radius(blast_df: pd.DataFrame, results: Path) -> None:
+    if blast_df.empty:
+        return
+    pivot = blast_df.pivot(index="source_business", columns="mode", values="blast_radius").fillna(0)
+    order = [b for b in ["customer", "loan", "credit", "aml", "approval"] if b in pivot.index]
+    pivot = pivot.reindex(order)
+    for col in ("baseline", "proposed"):
+        if col not in pivot:
+            pivot[col] = 0
+    x = list(range(len(pivot.index)))
+    width = 0.32
+    fig, ax = plt.subplots(figsize=(8, 5))
+    bars_b = ax.bar([i - width / 2 for i in x], pivot["baseline"], width, label="Baseline", color=PALETTE["baseline"])
+    bars_p = ax.bar([i + width / 2 for i in x], pivot["proposed"], width, label="Proposed", color=PALETTE["proposed"])
+    _bar_labels(ax, bars_b, lambda h: f"{int(h)}")
+    _bar_labels(ax, bars_p, lambda h: f"{int(h)}")
+    ax.set_xticks(x)
+    ax.set_xticklabels(pivot.index, fontsize=9)
+    ax.set_ylabel("Blast radius (reachable cross-business DBs, max 4)")
+    ax.set_ylim(0, 4.8)
+    ax.legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=2)
+    _style_axes(ax)
+    fig.tight_layout()
+    fig.savefig(results / "blast_radius.png", dpi=200, bbox_inches="tight", facecolor=fig.get_facecolor())
+    plt.close(fig)
+
+
+def plot_latency(batch_b: pd.DataFrame, batch_p: pd.DataFrame, results: Path) -> None:
+    values_b = batch_b["decision_ms_median"].dropna().tolist() if not batch_b.empty else []
+    values_p = batch_p["decision_ms_median"].dropna().tolist() if not batch_p.empty else []
+    if not values_b and not values_p:
+        return
+    fig, ax = plt.subplots(figsize=(6, 5))
+    bp = ax.boxplot([values_b, values_p], tick_labels=["Baseline", "Proposed"], patch_artist=True, widths=0.5, medianprops={"color": PALETTE["text_primary"], "linewidth": 1.5})
+    for patch, color in zip(bp["boxes"], (PALETTE["baseline"], PALETTE["proposed"])):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.75)
+        patch.set_edgecolor(color)
+    for element in ("whiskers", "caps"):
+        for line in bp[element]:
+            line.set_color(PALETTE["muted"])
+    ax.set_ylabel("Policy decision latency, per-batch median (ms)")
+    _style_axes(ax)
+    fig.tight_layout()
+    fig.savefig(results / "latency_boxplot.png", dpi=200, bbox_inches="tight", facecolor=fig.get_facecolor())
+    plt.close(fig)
 
 
 def main() -> int:
@@ -23,6 +212,7 @@ def main() -> int:
     parser.add_argument("--results-dir", type=Path, default=Path("results"))
     args = parser.parse_args()
     results = args.results_dir
+
     patterns = {
         "policy_baseline": latest(str(results / "raw_policy_baseline_*.csv")),
         "policy_proposed": latest(str(results / "raw_policy_proposed_*.csv")),
@@ -40,58 +230,93 @@ def main() -> int:
     pb, pp = pd.read_csv(patterns["policy_baseline"]), pd.read_csv(patterns["policy_proposed"])
     cb, cp = pd.read_csv(patterns["cds_baseline"]), pd.read_csv(patterns["cds_proposed"])
     rb, rp = pd.read_csv(patterns["reach_baseline"]), pd.read_csv(patterns["reach_proposed"])
-    fb, fp = pd.read_csv(patterns["perf_baseline"]), pd.read_csv(patterns["perf_proposed"])
 
-    unauthorized_b = pb[pb["scenario_id"].astype(str).str.startswith("U")]
-    unauthorized_p = pp[pp["scenario_id"].astype(str).str.startswith("U")]
+    audit_b = read_jsonl(results / "pep_audit_baseline.jsonl")
+    audit_p = read_jsonl(results / "pep_audit_proposed.jsonl")
+    if not audit_b or not audit_p:
+        print("warning: pep_audit_{baseline,proposed}.jsonl not found or empty under --results-dir; "
+              "latency/audit-completeness metrics will be NaN. Did the PEP write to ./results as /logs?")
+
     authorized_b = pb[pb["scenario_id"].astype(str).str.startswith("A")]
     authorized_p = pp[pp["scenario_id"].astype(str).str.startswith("A")]
+    unauthorized_b = pb[pb["scenario_id"].astype(str).str.startswith("U")]
+    unauthorized_p = pp[pp["scenario_id"].astype(str).str.startswith("U")]
     cross_b = rb[rb["relationship"] == "cross_business_db"]
     cross_p = rp[rp["relationship"] == "cross_business_db"]
 
+    blast_b = blast_radius(rb)
+    blast_p = blast_radius(rp)
+    blast_b["mode"] = "baseline"
+    blast_p["mode"] = "proposed"
+    blast_df = pd.concat([blast_b, blast_p], ignore_index=True)
+    blast_df.to_csv(results / "blast_radius.csv", index=False)
+
+    batch_b = batch_latency_stats(audit_b)
+    batch_p = batch_latency_stats(audit_p)
+    latency_by_flow = pd.concat([
+        batch_b.assign(mode="baseline"),
+        batch_p.assign(mode="proposed"),
+    ], ignore_index=True)
+    latency_by_flow.to_csv(results / "latency_by_flow.csv", index=False)
+
+    decision_b = summarize_latency(batch_b, "decision_ms_median")
+    decision_p = summarize_latency(batch_p, "decision_ms_median")
+    total_b = summarize_latency(batch_b, "total_ms_median")
+    total_p = summarize_latency(batch_p, "total_ms_median")
+
+    completeness_b = audit_completeness(pb, audit_b)
+    completeness_p = audit_completeness(pp, audit_p)
+
     summary = pd.DataFrame([
         {"metric": "authorized_flow_success_rate", "baseline": rate(authorized_b["actual"], "allow"), "proposed": rate(authorized_p["actual"], "allow")},
-        {"metric": "unauthorized_flow_success_rate", "baseline": rate(unauthorized_b["actual"], "allow"), "proposed": rate(unauthorized_p["actual"], "allow")},
-        {"metric": "cross_business_db_reachability_rate", "baseline": rate(cross_b["reachable"].astype(str), "true"), "proposed": rate(cross_p["reachable"].astype(str), "true")},
-        {"metric": "cds_policy_match_rate", "baseline": rate(cb["matches_expected"].astype(str), "true"), "proposed": rate(cp["matches_expected"].astype(str), "true")},
-        {"metric": "performance_p50_ms", "baseline": fb[fb.status_code.between(200,299)]["latency_ms"].median(), "proposed": fp[fp.status_code.between(200,299)]["latency_ms"].median()},
-        {"metric": "performance_p95_ms", "baseline": fb[fb.status_code.between(200,299)]["latency_ms"].quantile(.95), "proposed": fp[fp.status_code.between(200,299)]["latency_ms"].quantile(.95)},
+        {"metric": "unauthorized_flow_block_rate", "baseline": rate(unauthorized_b["actual"], "deny"), "proposed": rate(unauthorized_p["actual"], "deny")},
+        {"metric": "cross_business_db_reachability_rate", "baseline": to_bool_series(cross_b["reachable"]).mean() if len(cross_b) else float("nan"), "proposed": to_bool_series(cross_p["reachable"]).mean() if len(cross_p) else float("nan")},
+        {"metric": "blast_radius_mean", "baseline": blast_b["blast_radius"].mean() if len(blast_b) else float("nan"), "proposed": blast_p["blast_radius"].mean() if len(blast_p) else float("nan")},
+        {"metric": "decision_latency_median_ms", "baseline": decision_b["median"], "proposed": decision_p["median"]},
+        {"metric": "decision_latency_p95_ms", "baseline": decision_b["p95"], "proposed": decision_p["p95"]},
+        {"metric": "total_latency_median_ms", "baseline": total_b["median"], "proposed": total_p["median"]},
+        {"metric": "total_latency_p95_ms", "baseline": total_b["p95"], "proposed": total_p["p95"]},
+        {"metric": "audit_completeness_rate", "baseline": completeness_b, "proposed": completeness_p},
     ])
     summary["relative_change"] = (summary["proposed"] - summary["baseline"]) / summary["baseline"].replace(0, pd.NA)
-    summary_path = results / "experiment_summary.csv"
-    summary.to_csv(summary_path, index=False)
+    summary.to_csv(results / "experiment_summary.csv", index=False)
 
-    # Proportion comparison for unauthorized successes.
-    table = [
-        [(unauthorized_b.actual == "allow").sum(), (unauthorized_b.actual != "allow").sum()],
-        [(unauthorized_p.actual == "allow").sum(), (unauthorized_p.actual != "allow").sum()],
-    ]
-    odds_ratio, fisher_p = fisher_exact(table)
-    lat_b = fb[fb.status_code.between(200,299)]["latency_ms"].astype(float)
-    lat_p = fp[fp.status_code.between(200,299)]["latency_ms"].astype(float)
-    u_stat, mw_p = mannwhitneyu(lat_b, lat_p, alternative="two-sided")
-    stats = pd.DataFrame([
-        {"test": "Fisher exact - unauthorized flow success", "statistic": odds_ratio, "p_value": fisher_p},
-        {"test": "Mann-Whitney U - latency", "statistic": u_stat, "p_value": mw_p},
+    latency_ci = pd.DataFrame([
+        {"metric": "decision_ms", "mode": "baseline", **decision_b},
+        {"metric": "decision_ms", "mode": "proposed", **decision_p},
+        {"metric": "total_ms", "mode": "baseline", **total_b},
+        {"metric": "total_ms", "mode": "proposed", **total_p},
     ])
-    stats.to_csv(results / "statistical_tests.csv", index=False)
+    latency_ci.to_csv(results / "latency_confidence_intervals.csv", index=False)
 
-    plot_df = summary[summary.metric.isin(["authorized_flow_success_rate", "unauthorized_flow_success_rate", "cross_business_db_reachability_rate"])].set_index("metric")[["baseline","proposed"]]
-    ax = plot_df.plot(kind="bar", figsize=(9, 5))
-    ax.set_ylabel("Rate")
-    ax.set_ylim(0, 1.05)
-    plt.xticks(rotation=15, ha="right")
-    plt.tight_layout()
-    plt.savefig(results / "security_effectiveness.png", dpi=200, bbox_inches="tight")
-    plt.close()
+    # 반복된 동일 요청을 독립 표본처럼 Fisher 검정에 넣지 않고, 보안·기능
+    # 시나리오는 exact count/rate로만 보고한다.
+    exact_counts = pd.DataFrame([
+        {"category": "authorized_flows", "mode": "baseline", "total": len(authorized_b), "expected_match": int((authorized_b["actual"] == authorized_b["expected"]).sum())},
+        {"category": "authorized_flows", "mode": "proposed", "total": len(authorized_p), "expected_match": int((authorized_p["actual"] == authorized_p["expected"]).sum())},
+        {"category": "unauthorized_flows", "mode": "baseline", "total": len(unauthorized_b), "expected_match": int((unauthorized_b["actual"] == unauthorized_b["expected"]).sum())},
+        {"category": "unauthorized_flows", "mode": "proposed", "total": len(unauthorized_p), "expected_match": int((unauthorized_p["actual"] == unauthorized_p["expected"]).sum())},
+        {"category": "cross_business_db_reachability", "mode": "baseline", "total": len(cross_b), "expected_match": int((~to_bool_series(cross_b["reachable"])).sum())},
+        {"category": "cross_business_db_reachability", "mode": "proposed", "total": len(cross_p), "expected_match": int((~to_bool_series(cross_p["reachable"])).sum())},
+        {"category": "cds_transfer", "mode": "baseline", "total": len(cb), "expected_match": int(to_bool_series(cb["matches_expected"]).sum())},
+        {"category": "cds_transfer", "mode": "proposed", "total": len(cp), "expected_match": int(to_bool_series(cp["matches_expected"]).sum())},
+    ])
+    exact_counts["match_rate"] = exact_counts["expected_match"] / exact_counts["total"].replace(0, pd.NA)
+    exact_counts.to_csv(results / "exact_count_summary.csv", index=False)
 
-    perf = pd.DataFrame({"baseline": lat_b.reset_index(drop=True), "proposed": lat_p.reset_index(drop=True)})
-    ax = perf.boxplot(figsize=(7, 5))
-    ax.set_ylabel("Latency (ms)")
-    plt.tight_layout()
-    plt.savefig(results / "latency_boxplot.png", dpi=200, bbox_inches="tight")
-    plt.close()
-    print(summary_path)
+    # 성능은 표본 규모가 크므로(배치×요청) 배치 median 간 Mann-Whitney U를 보조 지표로 유지.
+    stats_rows = []
+    if len(batch_b) and len(batch_p):
+        for column, label in (("decision_ms_median", "decision_ms"), ("total_ms_median", "total_ms")):
+            u_stat, mw_p = mannwhitneyu(batch_b[column], batch_p[column], alternative="two-sided")
+            stats_rows.append({"test": f"Mann-Whitney U - batch median {label} (baseline vs proposed)", "statistic": u_stat, "p_value": mw_p, "n_batches_baseline": len(batch_b), "n_batches_proposed": len(batch_p)})
+    pd.DataFrame(stats_rows).to_csv(results / "statistical_tests.csv", index=False)
+
+    plot_security_effectiveness(summary, results)
+    plot_blast_radius(blast_df, results)
+    plot_latency(batch_b, batch_p, results)
+
+    print(results / "experiment_summary.csv")
     return 0
 
 

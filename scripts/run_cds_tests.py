@@ -13,7 +13,9 @@ def main() -> int:
     parser.add_argument("--mode", choices=["baseline", "proposed"], required=True)
     parser.add_argument("--base-url", default="http://127.0.0.1:18090")
     parser.add_argument("--repeat", type=int, default=1)
+    parser.add_argument("--experiment-run-id", default=None)
     args = parser.parse_args()
+    experiment_run_id = args.experiment_run_id or f"{args.mode}-{timestamp()}"
 
     rows: list[dict] = []
     with httpx.Client(timeout=10.0) as client:
@@ -27,7 +29,13 @@ def main() -> int:
                 "content": parse_json(scenario["content_json"]),
                 "source_object_id": scenario["source_object_id"],
             }
-            headers = {"x-user": "lab-user", "x-role": scenario["role"], "x-device-trust": scenario["device_trust"]}
+            headers = {
+                "x-user": "lab-user",
+                "x-role": scenario["role"],
+                "x-device-trust": scenario["device_trust"],
+                "x-scenario-id": scenario["scenario_id"],
+                "x-experiment-run-id": experiment_run_id,
+            }
             for run_id in range(1, args.repeat + 1):
                 started = time.perf_counter()
                 try:
@@ -42,6 +50,7 @@ def main() -> int:
                 rows.append({
                     **scenario,
                     "mode": args.mode,
+                    "experiment_run_id": experiment_run_id,
                     "run_id": run_id,
                     "status_code": status_code,
                     "actual": actual,

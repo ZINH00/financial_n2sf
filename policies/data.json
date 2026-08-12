@@ -1,6 +1,43 @@
 {
   "financial": {
-    "model_version": "track2-v1",
-    "zones": {"customer": "S", "loan": "S", "credit": "S", "aml": "S", "approval": "S", "public": "O", "external_ai": "O"}
+    "model_version": "track2-v2",
+    "zones": {"customer": "S", "loan": "S", "credit": "S", "aml": "S", "approval": "S", "public": "O", "external_ai": "O"},
+    "permissions": [
+      {
+        "role": "loan_reviewer",
+        "source_business": "loan",
+        "destination": "customer",
+        "action": "read_customer_profile",
+        "purpose": "loan_screening"
+      },
+      {
+        "role": "loan_reviewer",
+        "source_business": "loan",
+        "destination": "credit",
+        "action": "request_credit_assessment",
+        "purpose": "loan_screening"
+      },
+      {
+        "role": "loan_reviewer",
+        "source_business": "loan",
+        "destination": "aml",
+        "action": "request_aml_screening",
+        "purpose": "loan_screening"
+      },
+      {
+        "role": "loan_reviewer",
+        "source_business": "loan",
+        "destination": "approval",
+        "action": "submit_for_approval",
+        "purpose": "loan_approval"
+      },
+      {
+        "role": "loan_approver",
+        "source_business": "approval",
+        "destination": "loan",
+        "action": "read_review_package",
+        "purpose": "loan_approval"
+      }
+    ]
   }
 }

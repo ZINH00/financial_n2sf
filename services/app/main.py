@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import httpx
 import psycopg
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 SERVICE_NAME = os.getenv("SERVICE_NAME", "unknown")
@@ -21,23 +24,33 @@ DB_NAME = os.getenv("POSTGRES_DB", "n2sf")
 DB_USER = os.getenv("POSTGRES_USER", "n2sf")
 DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "n2sf_lab_pw")
 PEP_URL = os.getenv("PEP_URL", "http://pep:8080")
+WORKLOAD_SECRET = os.getenv("WORKLOAD_SECRET", "")
 AUDIT_FILE = Path(os.getenv("AUDIT_FILE", "/tmp/service_audit.jsonl"))
 
-app = FastAPI(title=f"Financial Institution A - {SERVICE_NAME}")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.http_client = httpx.AsyncClient(timeout=5.0)
+    try:
+        yield
+    finally:
+        await app.state.http_client.aclose()
 
 
-class WorkRequest(BaseModel):
-    case_id: str = Field(min_length=1, max_length=64)
-    operation: str = Field(min_length=1, max_length=64)
+app = FastAPI(title=f"Financial Institution A - {SERVICE_NAME}", lifespan=lifespan)
+
+
+class BusinessActionRequest(BaseModel):
+    case_id: str = Field(default="CASE-0001", min_length=1, max_length=64)
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
 class CrossServiceRequest(BaseModel):
     destination: str
-    path: str = "/records"
+    path: str
     method: str = "GET"
     data_grade: str = "S"
-    purpose: str = "approved_workflow"
+    purpose: str = "loan_screening"
     transfer_approved: bool = False
     body: dict[str, Any] | None = None
 
@@ -60,79 +73,126 @@ def audit(event: dict[str, Any]) -> None:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "service": SERVICE_NAME, "role": BUSINESS_ROLE, "zone": ZONE}
+def sign_workload(timestamp: str) -> str:
+    if not WORKLOAD_SECRET:
+        return ""
+    return hmac.new(WORKLOAD_SECRET.encode(), f"{SERVICE_NAME}:{timestamp}".encode(), hashlib.sha256).hexdigest()
 
 
-@app.get("/records")
-def records(limit: int = 10) -> dict[str, Any]:
-    limit = max(1, min(limit, 100))
+def _serialize_row(row: tuple[Any, ...]) -> dict[str, Any]:
+    return {
+        "record_id": row[0],
+        "case_id": row[1],
+        "data_grade": row[2],
+        "payload": row[3],
+        "created_at": row[4].isoformat() if row[4] else None,
+    }
+
+
+def _read_records(case_id: str, action: str) -> dict[str, Any]:
     try:
         with db_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT record_id, case_id, data_grade, payload, created_at "
-                "FROM business_records ORDER BY record_id LIMIT %s",
-                (limit,),
+                "FROM business_records WHERE case_id = %s ORDER BY record_id DESC LIMIT 5",
+                (case_id,),
             )
             rows = cur.fetchall()
     except Exception as exc:  # pragma: no cover - lab runtime path
         raise HTTPException(status_code=503, detail=f"database unavailable: {exc}") from exc
-    audit({"event": "records_read", "count": len(rows)})
+    audit({"event": action, "case_id": case_id, "count": len(rows)})
     return {
         "service": SERVICE_NAME,
-        "records": [
-            {
-                "record_id": row[0],
-                "case_id": row[1],
-                "data_grade": row[2],
-                "payload": row[3],
-                "created_at": row[4].isoformat() if row[4] else None,
-            }
-            for row in rows
-        ],
+        "action": action,
+        "case_id": case_id,
+        "records": [_serialize_row(row) for row in rows],
     }
 
 
-@app.post("/work")
-def work(request: WorkRequest) -> dict[str, Any]:
+def _write_record(case_id: str, action: str, payload: dict[str, Any]) -> dict[str, Any]:
     started = time.perf_counter()
     try:
         with db_conn() as conn, conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO business_records(case_id, data_grade, payload) VALUES (%s, %s, %s::jsonb) RETURNING record_id",
-                (request.case_id, "S" if ZONE == "S" else "O", json.dumps({"operation": request.operation, **request.payload})),
+                (case_id, "S" if ZONE == "S" else "O", json.dumps({"action": action, **payload})),
             )
             record_id = cur.fetchone()[0]
             conn.commit()
     except Exception as exc:  # pragma: no cover - lab runtime path
         raise HTTPException(status_code=503, detail=f"database unavailable: {exc}") from exc
     elapsed_ms = (time.perf_counter() - started) * 1000
-    audit({"event": "work_write", "record_id": record_id, "operation": request.operation, "elapsed_ms": elapsed_ms})
-    return {"service": SERVICE_NAME, "record_id": record_id, "elapsed_ms": elapsed_ms}
+    audit({"event": action, "case_id": case_id, "record_id": record_id, "elapsed_ms": elapsed_ms})
+    return {"service": SERVICE_NAME, "action": action, "case_id": case_id, "record_id": record_id, "elapsed_ms": elapsed_ms}
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok", "service": SERVICE_NAME, "role": BUSINESS_ROLE, "zone": ZONE}
+
+
+# 논문 3.3절의 업무 행위(Action) 단위 엔드포인트. 모든 업무 컨테이너가 동일한 이미지를
+# 사용하므로 다섯 행위 모두를 동일하게 노출하고, 실제 어떤 업무가 응답하는지는 PEP의
+# 목적지 라우팅(destination)으로 결정된다. 행위 자체의 허용 여부는 PEP가 파생한
+# canonical action과 OPA 정책(permissions 튜플)이 판단한다.
+@app.get("/customer-profile/{case_id}")
+def read_customer_profile(case_id: str) -> dict[str, Any]:
+    return _read_records(case_id, "read_customer_profile")
+
+
+@app.post("/credit-assessment")
+def request_credit_assessment(request: BusinessActionRequest) -> dict[str, Any]:
+    return _write_record(request.case_id, "request_credit_assessment", request.payload)
+
+
+@app.post("/aml-screening")
+def request_aml_screening(request: BusinessActionRequest) -> dict[str, Any]:
+    return _write_record(request.case_id, "request_aml_screening", request.payload)
+
+
+@app.post("/approval-requests")
+def submit_for_approval(request: BusinessActionRequest) -> dict[str, Any]:
+    return _write_record(request.case_id, "submit_for_approval", request.payload)
+
+
+@app.get("/loan-review/{case_id}")
+def read_review_package(case_id: str) -> dict[str, Any]:
+    return _read_records(case_id, "read_review_package")
 
 
 @app.post("/call")
 async def call_service(
-    request: CrossServiceRequest,
+    call: CrossServiceRequest,
+    http_request: Request,
     x_user: str = Header(default="lab-user"),
-    x_role: str = Header(default="analyst"),
+    x_role: str = Header(default="loan_reviewer"),
     x_device_trust: str = Header(default="trusted"),
+    x_scenario_id: str = Header(default=""),
+    x_experiment_run_id: str = Header(default=""),
 ) -> dict[str, Any]:
+    """실제 출발 업무 워크로드가 자기 신원(SERVICE_NAME/BUSINESS_ROLE)을 서명하여 PEP를
+    호출한다. 호출자는 destination/path/method/purpose 등 업무 요청 내용만 지정할 수
+    있으며, source_service/source_business와 워크로드 서명은 이 컨테이너의 환경설정과
+    비밀키로만 생성되어 호출자가 덮어쓸 수 없다."""
+    timestamp = str(int(time.time()))
     headers = {
         "x-user": x_user,
         "x-role": x_role,
         "x-device-trust": x_device_trust,
         "x-source-service": SERVICE_NAME,
         "x-source-business": BUSINESS_ROLE,
-        "x-purpose": request.purpose,
-        "x-data-grade": request.data_grade,
-        "x-transfer-approved": str(request.transfer_approved).lower(),
+        "x-workload-timestamp": timestamp,
+        "x-workload-signature": sign_workload(timestamp),
+        "x-purpose": call.purpose,
+        "x-data-grade": call.data_grade,
+        "x-transfer-approved": str(call.transfer_approved).lower(),
+        "x-scenario-id": x_scenario_id,
+        "x-experiment-run-id": x_experiment_run_id,
     }
-    url = f"{PEP_URL}/proxy/{request.destination}{request.path}"
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        response = await client.request(request.method.upper(), url, headers=headers, json=request.body)
-    audit({"event": "cross_service_call", "destination": request.destination, "status": response.status_code})
+    url = f"{PEP_URL}/proxy/{call.destination}{call.path}"
+    client: httpx.AsyncClient = http_request.app.state.http_client
+    response = await client.request(call.method.upper(), url, headers=headers, json=call.body)
+    audit({"event": "cross_service_call", "destination": call.destination, "status": response.status_code, "scenario_id": x_scenario_id})
     try:
         body = response.json()
     except ValueError:

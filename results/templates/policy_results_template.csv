@@ -1,1 +1,1 @@
-scenario_id,mode,run_id,source_business,destination,expected,actual,status_code,latency_ms,error
+scenario_id,entry_point,source_service,source_business,destination,method,path,action,role,device_trust,purpose,data_grade,claimed_source_service,claimed_source_business,signature_mode,violation_type,expected_baseline,expected_proposed,mode,run_id,experiment_run_id,status_code,actual,expected,matches_expected,latency_ms,error

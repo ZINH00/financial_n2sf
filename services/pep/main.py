@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
+import re
 import time
+import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -11,8 +16,10 @@ import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 
 OPA_URL = os.getenv("OPA_URL", "http://opa:8181/v1/data/financial/access/decision")
+OPA_MODEL_VERSION_URL = OPA_URL.split("/v1/data/")[0] + "/v1/data/financial/model_version"
 AUDIT_FILE = Path(os.getenv("AUDIT_FILE", "/logs/pep_audit.jsonl"))
 TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "5.0"))
+WORKLOAD_SIGNATURE_WINDOW_SECONDS = 30
 SERVICE_MAP = {
     "customer": "http://customer_app:8000",
     "loan": "http://loan_app:8000",
@@ -20,8 +27,67 @@ SERVICE_MAP = {
     "aml": "http://aml_app:8000",
     "approval": "http://approval_app:8000",
 }
+# 업무 워크로드 신원 검증용 비밀키. 키가 곧 검증된 출발 업무명이며, 클라이언트가
+# 보낸 x-source-business 헤더는 신뢰하지 않고 서명이 검증된 서비스명으로 대체한다.
+WORKLOAD_SECRETS: dict[str, str] = json.loads(os.getenv("WORKLOAD_SECRETS", "{}"))
 
-app = FastAPI(title="Financial Institution A Policy Enforcement Point")
+# 논문 3.3절의 "요청 행위(Action)"를 클라이언트 자기신고가 아니라 PEP가 HTTP
+# method+path로부터 서버 측에서 결정한다. 매핑되지 않는 경로는 unsupported_action으로
+# 표시되어 OPA의 기본거부(default-deny)로 자연스럽게 막힌다.
+ACTION_ROUTES: list[tuple[str, re.Pattern[str], str]] = [
+    ("GET", re.compile(r"^/customer-profile/[^/]+$"), "read_customer_profile"),
+    ("POST", re.compile(r"^/credit-assessment$"), "request_credit_assessment"),
+    ("POST", re.compile(r"^/aml-screening$"), "request_aml_screening"),
+    ("POST", re.compile(r"^/approval-requests$"), "submit_for_approval"),
+    ("GET", re.compile(r"^/loan-review/[^/]+$"), "read_review_package"),
+]
+
+
+def derive_action(method: str, path: str) -> str:
+    for route_method, pattern, action in ACTION_ROUTES:
+        if method == route_method and pattern.match(path):
+            return action
+    return "unsupported_action"
+
+
+def verify_workload(source_service: str, timestamp: str, signature: str) -> tuple[bool, str, str | None]:
+    """PEP가 자체적으로 출발 업무 신원을 검증한다(NIST SP 800-207A의 서비스 신원
+    기반 정책 취지). 클라이언트가 자칭한 x-source-business는 여기서 검증에 성공한
+    경우에만, 그것도 서명에 쓰인 서비스명으로 대체되어 신뢰된다."""
+    secret = WORKLOAD_SECRETS.get(source_service)
+    if not secret:
+        return False, "unregistered_workload", None
+    if not timestamp or not signature:
+        return False, "workload_signature_invalid", None
+    try:
+        ts = int(timestamp)
+    except ValueError:
+        return False, "workload_signature_invalid", None
+    if abs(time.time() - ts) > WORKLOAD_SIGNATURE_WINDOW_SECONDS:
+        return False, "workload_signature_invalid", None
+    expected = hmac.new(secret.encode(), f"{source_service}:{timestamp}".encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, signature):
+        return False, "workload_signature_invalid", None
+    return True, "ok", source_service
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.http_client = httpx.AsyncClient(timeout=TIMEOUT)
+    app.state.policy_version = "unknown"
+    try:
+        response = await app.state.http_client.get(OPA_MODEL_VERSION_URL)
+        if response.status_code == 200:
+            app.state.policy_version = response.json().get("result", "unknown")
+    except httpx.HTTPError:
+        pass
+    try:
+        yield
+    finally:
+        await app.state.http_client.aclose()
+
+
+app = FastAPI(title="Financial Institution A Policy Enforcement Point", lifespan=lifespan)
 
 
 def write_audit(record: dict[str, Any]) -> None:
@@ -46,43 +112,99 @@ async def proxy(
     x_device_trust: str = Header(default="untrusted"),
     x_source_service: str = Header(default="external"),
     x_source_business: str = Header(default="external"),
+    x_workload_timestamp: str = Header(default=""),
+    x_workload_signature: str = Header(default=""),
     x_purpose: str = Header(default="unspecified"),
     x_data_grade: str = Header(default="S"),
     x_transfer_approved: str = Header(default="false"),
+    x_scenario_id: str = Header(default=""),
+    x_experiment_run_id: str = Header(default="adhoc"),
 ) -> Any:
+    total_started = time.perf_counter()
+    request_id = str(uuid.uuid4())
     if destination not in SERVICE_MAP:
         raise HTTPException(status_code=404, detail="unknown destination")
+
+    path_with_slash = "/" + path
+    action = derive_action(request.method, path_with_slash)
+    verified, identity_reason, verified_business = verify_workload(x_source_service, x_workload_timestamp, x_workload_signature)
+
+    audit_base = {
+        "request_id": request_id,
+        "experiment_run_id": x_experiment_run_id or "adhoc",
+        "scenario_id": x_scenario_id,
+        "user_role": x_role,
+        "claimed_source_service": x_source_service,
+        "verified_workload_identity": verified,
+        "destination": destination,
+        "action": action,
+        "purpose": x_purpose,
+        "data_grade": x_data_grade,
+        "policy_version": request.app.state.policy_version,
+    }
+
+    if not verified:
+        total_ms = (time.perf_counter() - total_started) * 1000
+        write_audit({
+            **audit_base,
+            "source_business": None,
+            "decision": "deny",
+            "reason": identity_reason,
+            "decision_ms": 0.0,
+            "upstream_ms": 0.0,
+            "total_ms": total_ms,
+            "upstream_status": None,
+        })
+        raise HTTPException(status_code=403, detail={"reason": identity_reason, "request_id": request_id})
+
     input_doc = {
         "user": x_user,
         "role": x_role,
         "device_trust": x_device_trust,
         "source_service": x_source_service,
-        "source_business": x_source_business,
+        "source_business": verified_business,
         "destination": destination,
         "method": request.method,
-        "path": "/" + path,
+        "path": path_with_slash,
+        "action": action,
         "purpose": x_purpose,
         "data_grade": x_data_grade,
         "transfer_approved": x_transfer_approved.lower() == "true",
     }
+    client: httpx.AsyncClient = request.app.state.http_client
     decision_started = time.perf_counter()
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        opa_response = await client.post(OPA_URL, json={"input": input_doc})
+    opa_response = await client.post(OPA_URL, json={"input": input_doc})
     decision_ms = (time.perf_counter() - decision_started) * 1000
     if opa_response.status_code != 200:
-        write_audit({"input": input_doc, "allow": False, "reason": "opa_error", "decision_ms": decision_ms})
+        total_ms = (time.perf_counter() - total_started) * 1000
+        write_audit({**audit_base, "source_business": verified_business, "decision": "deny", "reason": "opa_error", "decision_ms": decision_ms, "upstream_ms": 0.0, "total_ms": total_ms, "upstream_status": None})
         raise HTTPException(status_code=503, detail="policy engine unavailable")
     result = opa_response.json().get("result") or {}
     allow = bool(result.get("allow", False))
     reason = result.get("reason", "unspecified")
-    write_audit({"input": input_doc, "allow": allow, "reason": reason, "decision_ms": decision_ms})
+
     if not allow:
-        raise HTTPException(status_code=403, detail={"reason": reason, "decision_ms": decision_ms})
+        total_ms = (time.perf_counter() - total_started) * 1000
+        write_audit({**audit_base, "source_business": verified_business, "decision": "deny", "reason": reason, "decision_ms": decision_ms, "upstream_ms": 0.0, "total_ms": total_ms, "upstream_status": None})
+        raise HTTPException(status_code=403, detail={"reason": reason, "decision_ms": decision_ms, "request_id": request_id})
+
     body = await request.body()
     target = f"{SERVICE_MAP[destination]}/{path}"
-    forward_headers = {"x-policy-user": x_user, "x-policy-role": x_role}
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        upstream = await client.request(request.method, target, params=request.query_params, content=body, headers=forward_headers)
+    forward_headers = {"x-policy-user": x_user, "x-policy-role": x_role, "x-request-id": request_id}
+    upstream_started = time.perf_counter()
+    upstream = await client.request(request.method, target, params=request.query_params, content=body, headers=forward_headers)
+    upstream_ms = (time.perf_counter() - upstream_started) * 1000
+    total_ms = (time.perf_counter() - total_started) * 1000
+    write_audit({
+        **audit_base,
+        "source_business": verified_business,
+        "decision": "allow",
+        "reason": reason,
+        "decision_ms": decision_ms,
+        "upstream_ms": upstream_ms,
+        "total_ms": total_ms,
+        "upstream_status": upstream.status_code,
+    })
     content_type = upstream.headers.get("content-type", "")
     if "application/json" in content_type:
         return upstream.json()
