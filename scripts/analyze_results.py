@@ -84,13 +84,18 @@ def audit_completeness(policy_df: pd.DataFrame, audit_rows: list[dict]) -> float
     return matched / len(policy_df)
 
 
-def batch_latency_stats(audit_rows: list[dict], flow_prefix: str = "PERF-") -> pd.DataFrame:
+def batch_latency_stats(audit_rows: list[dict], experiment_run_id: str | None, flow_prefix: str = "PERF-") -> pd.DataFrame:
     """PEP 감사로그에서 성능 시나리오(scenario_id=PERF-<flow>-b<NNN>)의 허용된
-    요청만 골라 배치별 median(decision_ms, total_ms)을 산출한다."""
+    요청만 골라 배치별 median(decision_ms, total_ms)을 산출한다. 감사로그는 같은
+    모드를 재실행할 때마다 기존 파일 뒤에 append되므로(README §7.3), 최신
+    raw_performance_*.csv에 기록된 experiment_run_id로 반드시 필터링해서 이전
+    실행의 동일 배치ID(예: PERF-loan_to_credit-b001)와 섞이지 않게 한다."""
     by_batch: dict[tuple[str, int], dict[str, list[float]]] = defaultdict(lambda: {"decision_ms": [], "total_ms": []})
     for row in audit_rows:
         scenario_id = str(row.get("scenario_id", ""))
         if not scenario_id.startswith(flow_prefix) or "-b" not in scenario_id or row.get("decision") != "allow":
+            continue
+        if experiment_run_id is not None and str(row.get("experiment_run_id", "")) != str(experiment_run_id):
             continue
         flow_name, _, batch_part = scenario_id[len(flow_prefix):].rpartition("-b")
         try:
@@ -241,6 +246,9 @@ def main() -> int:
     pb, pp = pd.read_csv(patterns["policy_baseline"]), pd.read_csv(patterns["policy_proposed"])
     cb, cp = pd.read_csv(patterns["cds_baseline"]), pd.read_csv(patterns["cds_proposed"])
     rb, rp = pd.read_csv(patterns["reach_baseline"]), pd.read_csv(patterns["reach_proposed"])
+    fb, fp = pd.read_csv(patterns["perf_baseline"]), pd.read_csv(patterns["perf_proposed"])
+    perf_run_id_b = str(fb["experiment_run_id"].iloc[0]) if len(fb) else None
+    perf_run_id_p = str(fp["experiment_run_id"].iloc[0]) if len(fp) else None
 
     audit_b = read_jsonl(results / "pep_audit_baseline.jsonl")
     audit_p = read_jsonl(results / "pep_audit_proposed.jsonl")
@@ -268,8 +276,8 @@ def main() -> int:
     blast_df = pd.concat([blast_b, blast_p], ignore_index=True)
     blast_df.to_csv(results / "blast_radius.csv", index=False)
 
-    batch_b = batch_latency_stats(audit_b)
-    batch_p = batch_latency_stats(audit_p)
+    batch_b = batch_latency_stats(audit_b, perf_run_id_b)
+    batch_p = batch_latency_stats(audit_p, perf_run_id_p)
     latency_by_flow = pd.concat([
         batch_b.assign(mode="baseline"),
         batch_p.assign(mode="proposed"),

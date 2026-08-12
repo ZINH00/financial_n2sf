@@ -196,12 +196,19 @@ pip install -r requirements.txt
 ### 7.1 정책 유닛 테스트(선택, 매 실험 전 권장)
 
 ```bash
-docker run --rm -v "$(pwd)/policies:/policies" openpolicyagent/opa:1.4.2-static test /policies
+docker run --rm -v "$(pwd)/policies:/policies" openpolicyagent/opa:1.4.2-static \
+  test /policies/proposed.rego /policies/proposed_test.rego /policies/data.json
 ```
 
 `policies/proposed_test.rego`가 정상 5-튜플 allow와 역할/목적/행위 불일치·미신뢰 단말·반대
 방향·무관 업무 조합의 deny를 검증한다. 이 테스트를 통과한 정책 버전만 실험에 사용한다
 (재현성 확보 — 결과가 우연히 잘못 작성된 Rego 때문이 아님을 보장).
+
+`policies/` 디렉터리 전체(`opa test /policies`)를 한 번에 검사하지 않는다 — `baseline.rego`와
+`proposed.rego`가 둘 다 `package financial.access`에서 서로 다른 `default decision`을 정의하므로
+(`baseline_cds.rego`/`cds.rego`도 `package financial.cds`에서 동일하게 충돌), 함께 로드하면
+"multiple default rules" 컴파일 오류가 발생한다. `run_all.sh`도 모드별로 필요한 정책 파일만
+지정해서 검사한다.
 
 ### 7.2 비교군 실행
 

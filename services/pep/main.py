@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 OPA_URL = os.getenv("OPA_URL", "http://opa:8181/v1/data/financial/access/decision")
 OPA_MODEL_VERSION_URL = OPA_URL.split("/v1/data/")[0] + "/v1/data/financial/model_version"
@@ -205,7 +206,10 @@ async def proxy(
         "total_ms": total_ms,
         "upstream_status": upstream.status_code,
     })
+    # 업스트림 업무 서비스가 실제로 반환한 HTTP status를 그대로 보존한다. PEP가
+    # 항상 200으로 감싸버리면(예: 업무 DB 장애로 upstream이 503을 반환해도) 테스트
+    # 하네스가 status_code만으로 성공 여부를 판정하므로 장애가 성공으로 기록된다.
     content_type = upstream.headers.get("content-type", "")
     if "application/json" in content_type:
-        return upstream.json()
-    return {"status_code": upstream.status_code, "text": upstream.text}
+        return JSONResponse(status_code=upstream.status_code, content=upstream.json())
+    return JSONResponse(status_code=upstream.status_code, content={"status_code": upstream.status_code, "text": upstream.text})
