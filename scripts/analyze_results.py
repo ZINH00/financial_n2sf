@@ -12,10 +12,10 @@ from scipy.stats import mannwhitneyu
 
 from common import bootstrap_ci, iqr, percentile, read_jsonl, to_bool_series
 
-# README 6대 핵심 지표가 여기서 산출하는 값과 항상 일치하도록 관리한다:
-# Authorized Flow Success Rate, Unauthorized Flow Block Rate,
-# Cross-Business DB Reachability Rate, Blast Radius,
-# Policy Decision / End-to-End Latency, Audit Completeness.
+# README §11 평가 지표 정의가 여기서 산출하는 값과 항상 일치하도록 관리한다:
+# Authorized Flow Success Rate, Unauthorized Flow Block Rate(+policy/structural scope),
+# Cross-Business Service/DB Reachability Rate, Blast Radius,
+# Policy Decision(PEP 처리 지연시간) Latency, Audit Completeness.
 
 REQUIRED_AUDIT_FIELDS = [
     "request_id", "experiment_run_id", "scenario_id", "user_role",
@@ -23,6 +23,14 @@ REQUIRED_AUDIT_FIELDS = [
     "purpose", "data_grade", "policy_version", "decision", "reason",
     "decision_ms", "upstream_ms", "total_ms", "upstream_status", "ts",
 ]
+
+# U01-U05는 Rego 정책의 역할/목적/행위/방향/업무관계 세분화 여부에 따라 baseline과
+# proposed 결과가 갈리는 시나리오다. U06-U08은 PEP의 구조적 방어(단말 신뢰, 워크로드
+# 신원 검증)에 걸리므로 baseline에서도 deny이며, 정책 세분화의 효과를 보여주지 않는다.
+# Unauthorized Flow Block Rate 하나만 보면 이 둘이 섞여 baseline의 차단률이 실제보다
+# 높아 보이므로, 정책 세분화의 순수 효과만 보는 보조 지표를 별도로 산출한다.
+POLICY_VIOLATION_TYPES = {"role_mismatch", "purpose_mismatch", "action_mismatch", "reverse_direction", "unrelated_cross_business"}
+STRUCTURAL_VIOLATION_TYPES = {"untrusted_device", "unregistered_workload", "identity_spoofing"}
 
 PALETTE = {
     "surface": "#fcfcfb",
@@ -56,8 +64,11 @@ def blast_radius(reach_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def audit_completeness(policy_df: pd.DataFrame, audit_rows: list[dict]) -> float:
-    """필수 필드를 모두 포함하고 request_id/scenario_id로 상관관계가 확인된
-    감사로그 수 / 전체 요청 수."""
+    """필수 필드를 모두 포함하고 개별 요청과 1:1로 상관관계가 확인된 감사로그 수 /
+    전체 요청 수. `--repeat`로 동일 시나리오를 여러 번 반복해도 요청마다 고유한
+    attempt_id(예: A01-r001)를 PEP의 scenario_id 필드로 사용하므로, 30번 반복 중
+    일부만 로그에 남아도 그 차이가 그대로 드러난다(coarse하게 scenario_id만으로
+    묶으면 1건만 완전해도 30건 전체가 매칭된 것처럼 보이는 문제를 피한다)."""
     if policy_df.empty:
         return float("nan")
     index: dict[tuple[str, str], list[dict]] = defaultdict(list)
@@ -66,7 +77,7 @@ def audit_completeness(policy_df: pd.DataFrame, audit_rows: list[dict]) -> float
         index[key].append(row)
     matched = 0
     for _, prow in policy_df.iterrows():
-        key = (str(prow["scenario_id"]), str(prow["experiment_run_id"]))
+        key = (str(prow["attempt_id"]), str(prow["experiment_run_id"]))
         candidates = index.get(key, [])
         if any(all(field in c for field in REQUIRED_AUDIT_FIELDS) for c in candidates):
             matched += 1
@@ -138,18 +149,18 @@ def _bar_labels(ax, bars, fmt) -> None:
 
 
 def plot_security_effectiveness(summary: pd.DataFrame, results: Path) -> None:
-    metrics = ["authorized_flow_success_rate", "unauthorized_flow_block_rate", "cross_business_db_reachability_rate"]
-    labels = ["Authorized Flow\nSuccess Rate", "Unauthorized Flow\nBlock Rate", "Cross-Business DB\nReachability Rate"]
+    metrics = ["authorized_flow_success_rate", "unauthorized_flow_block_rate", "cross_business_app_reachability_rate", "cross_business_db_reachability_rate"]
+    labels = ["Authorized Flow\nSuccess Rate", "Unauthorized Flow\nBlock Rate", "Cross-Business Service\nReachability Rate", "Cross-Business DB\nReachability Rate"]
     plot_df = summary.set_index("metric").loc[metrics]
     x = list(range(len(metrics)))
     width = 0.32
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=(9.5, 5))
     bars_b = ax.bar([i - width / 2 for i in x], plot_df["baseline"], width, label="Baseline (flat network)", color=PALETTE["baseline"])
     bars_p = ax.bar([i + width / 2 for i in x], plot_df["proposed"], width, label="Proposed (role-based microsegmentation)", color=PALETTE["proposed"])
     _bar_labels(ax, bars_b, lambda h: f"{h*100:.0f}%")
     _bar_labels(ax, bars_p, lambda h: f"{h*100:.0f}%")
     ax.set_xticks(x)
-    ax.set_xticklabels(labels, fontsize=9)
+    ax.set_xticklabels(labels, fontsize=8.5)
     ax.set_ylabel("Rate")
     ax.set_ylim(0, 1.15)
     ax.legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=2)
@@ -241,8 +252,14 @@ def main() -> int:
     authorized_p = pp[pp["scenario_id"].astype(str).str.startswith("A")]
     unauthorized_b = pb[pb["scenario_id"].astype(str).str.startswith("U")]
     unauthorized_p = pp[pp["scenario_id"].astype(str).str.startswith("U")]
+    unauthorized_policy_b = unauthorized_b[unauthorized_b["violation_type"].isin(POLICY_VIOLATION_TYPES)]
+    unauthorized_policy_p = unauthorized_p[unauthorized_p["violation_type"].isin(POLICY_VIOLATION_TYPES)]
+    unauthorized_structural_b = unauthorized_b[unauthorized_b["violation_type"].isin(STRUCTURAL_VIOLATION_TYPES)]
+    unauthorized_structural_p = unauthorized_p[unauthorized_p["violation_type"].isin(STRUCTURAL_VIOLATION_TYPES)]
     cross_b = rb[rb["relationship"] == "cross_business_db"]
     cross_p = rp[rp["relationship"] == "cross_business_db"]
+    cross_app_b = rb[rb["relationship"] == "cross_business_app"]
+    cross_app_p = rp[rp["relationship"] == "cross_business_app"]
 
     blast_b = blast_radius(rb)
     blast_p = blast_radius(rp)
@@ -270,6 +287,9 @@ def main() -> int:
     summary = pd.DataFrame([
         {"metric": "authorized_flow_success_rate", "baseline": rate(authorized_b["actual"], "allow"), "proposed": rate(authorized_p["actual"], "allow")},
         {"metric": "unauthorized_flow_block_rate", "baseline": rate(unauthorized_b["actual"], "deny"), "proposed": rate(unauthorized_p["actual"], "deny")},
+        {"metric": "unauthorized_flow_block_rate_policy_scope", "baseline": rate(unauthorized_policy_b["actual"], "deny"), "proposed": rate(unauthorized_policy_p["actual"], "deny")},
+        {"metric": "unauthorized_flow_block_rate_structural_scope", "baseline": rate(unauthorized_structural_b["actual"], "deny"), "proposed": rate(unauthorized_structural_p["actual"], "deny")},
+        {"metric": "cross_business_app_reachability_rate", "baseline": to_bool_series(cross_app_b["reachable"]).mean() if len(cross_app_b) else float("nan"), "proposed": to_bool_series(cross_app_p["reachable"]).mean() if len(cross_app_p) else float("nan")},
         {"metric": "cross_business_db_reachability_rate", "baseline": to_bool_series(cross_b["reachable"]).mean() if len(cross_b) else float("nan"), "proposed": to_bool_series(cross_p["reachable"]).mean() if len(cross_p) else float("nan")},
         {"metric": "blast_radius_mean", "baseline": blast_b["blast_radius"].mean() if len(blast_b) else float("nan"), "proposed": blast_p["blast_radius"].mean() if len(blast_p) else float("nan")},
         {"metric": "decision_latency_median_ms", "baseline": decision_b["median"], "proposed": decision_p["median"]},
@@ -291,12 +311,25 @@ def main() -> int:
 
     # 반복된 동일 요청을 독립 표본처럼 Fisher 검정에 넣지 않고, 보안·기능
     # 시나리오는 exact count/rate로만 보고한다.
+    #
+    # cross_business_{app,db}_reachability의 "기대값"은 baseline과 proposed가
+    # 서로 다르다: baseline(flat network)은 설계상 교차 업무 도달이 가능한 것이
+    # 정상이므로 reachable=true가 기대값이고, proposed(업무별 segment)는
+    # reachable=false가 기대값이다. 두 모드에 같은 기대값(false)을 쓰면 baseline이
+    # 마치 "잘못된 결과"만 낸 것처럼 보이는데, baseline은 원래 그렇게 동작하도록
+    # 설계된 비교군이므로 이는 잘못된 계산이다.
     exact_counts = pd.DataFrame([
         {"category": "authorized_flows", "mode": "baseline", "total": len(authorized_b), "expected_match": int((authorized_b["actual"] == authorized_b["expected"]).sum())},
         {"category": "authorized_flows", "mode": "proposed", "total": len(authorized_p), "expected_match": int((authorized_p["actual"] == authorized_p["expected"]).sum())},
         {"category": "unauthorized_flows", "mode": "baseline", "total": len(unauthorized_b), "expected_match": int((unauthorized_b["actual"] == unauthorized_b["expected"]).sum())},
         {"category": "unauthorized_flows", "mode": "proposed", "total": len(unauthorized_p), "expected_match": int((unauthorized_p["actual"] == unauthorized_p["expected"]).sum())},
-        {"category": "cross_business_db_reachability", "mode": "baseline", "total": len(cross_b), "expected_match": int((~to_bool_series(cross_b["reachable"])).sum())},
+        {"category": "unauthorized_flows_policy_scope", "mode": "baseline", "total": len(unauthorized_policy_b), "expected_match": int((unauthorized_policy_b["actual"] == unauthorized_policy_b["expected"]).sum())},
+        {"category": "unauthorized_flows_policy_scope", "mode": "proposed", "total": len(unauthorized_policy_p), "expected_match": int((unauthorized_policy_p["actual"] == unauthorized_policy_p["expected"]).sum())},
+        {"category": "unauthorized_flows_structural_scope", "mode": "baseline", "total": len(unauthorized_structural_b), "expected_match": int((unauthorized_structural_b["actual"] == unauthorized_structural_b["expected"]).sum())},
+        {"category": "unauthorized_flows_structural_scope", "mode": "proposed", "total": len(unauthorized_structural_p), "expected_match": int((unauthorized_structural_p["actual"] == unauthorized_structural_p["expected"]).sum())},
+        {"category": "cross_business_app_reachability", "mode": "baseline", "total": len(cross_app_b), "expected_match": int(to_bool_series(cross_app_b["reachable"]).sum())},
+        {"category": "cross_business_app_reachability", "mode": "proposed", "total": len(cross_app_p), "expected_match": int((~to_bool_series(cross_app_p["reachable"])).sum())},
+        {"category": "cross_business_db_reachability", "mode": "baseline", "total": len(cross_b), "expected_match": int(to_bool_series(cross_b["reachable"]).sum())},
         {"category": "cross_business_db_reachability", "mode": "proposed", "total": len(cross_p), "expected_match": int((~to_bool_series(cross_p["reachable"])).sum())},
         {"category": "cds_transfer", "mode": "baseline", "total": len(cb), "expected_match": int(to_bool_series(cb["matches_expected"]).sum())},
         {"category": "cds_transfer", "mode": "proposed", "total": len(cp), "expected_match": int(to_bool_series(cp["matches_expected"]).sum())},

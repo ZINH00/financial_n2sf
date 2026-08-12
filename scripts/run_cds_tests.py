@@ -29,14 +29,17 @@ def main() -> int:
                 "content": parse_json(scenario["content_json"]),
                 "source_object_id": scenario["source_object_id"],
             }
-            headers = {
-                "x-user": "lab-user",
-                "x-role": scenario["role"],
-                "x-device-trust": scenario["device_trust"],
-                "x-scenario-id": scenario["scenario_id"],
-                "x-experiment-run-id": experiment_run_id,
-            }
             for run_id in range(1, args.repeat + 1):
+                # 요청마다 고유한 attempt_id를 CDS의 scenario_id로 전달해, 반복된
+                # 동일 시나리오라도 감사로그와 1:1로 상관관계를 확인할 수 있게 한다.
+                attempt_id = f"{scenario['scenario_id']}-r{run_id:03d}"
+                headers = {
+                    "x-user": "lab-user",
+                    "x-role": scenario["role"],
+                    "x-device-trust": scenario["device_trust"],
+                    "x-scenario-id": attempt_id,
+                    "x-experiment-run-id": experiment_run_id,
+                }
                 started = time.perf_counter()
                 try:
                     response = client.post(f"{args.base_url}/transfer", json=payload, headers=headers)
@@ -52,6 +55,7 @@ def main() -> int:
                     "mode": args.mode,
                     "experiment_run_id": experiment_run_id,
                     "run_id": run_id,
+                    "attempt_id": attempt_id,
                     "status_code": status_code,
                     "actual": actual,
                     "expected": expected,

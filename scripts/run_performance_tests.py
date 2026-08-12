@@ -9,9 +9,9 @@ from common import RESULTS, percentile, timestamp, write_csv
 
 # 논문 3.3절 정상 업무흐름 중 loan이 시작점인 4개 흐름을 모두 측정한다(승인자가
 # loan을 조회하는 역방향 흐름은 정책·기능 검증에서 이미 다루므로 성능측정은
-# 심사 단계에 집중한다). 각 흐름은 --batches개의 독립 배치로 나뉘며, 배치별
-# 요약값(median 등)을 통계 단위로 사용해 반복 측정을 유사-독립 표본처럼
-# 다루지 않는다.
+# 심사 단계에 집중한다). 각 흐름은 --batches개의 측정 배치로 나뉘며(프로세스를
+# 재기동하지는 않는다), 배치별 요약값(median 등)을 통계 단위로 사용해 반복 측정을
+# 유사-독립 표본처럼 다루지 않는다.
 FLOWS = [
     {"name": "loan_to_customer", "destination": "customer", "method": "GET", "path": "/customer-profile/CASE-0001", "purpose": "loan_screening"},
     {"name": "loan_to_credit", "destination": "credit", "method": "POST", "path": "/credit-assessment", "purpose": "loan_screening"},

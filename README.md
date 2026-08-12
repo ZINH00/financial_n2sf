@@ -137,10 +137,12 @@ OPA에 전달되어 어떤 튜플과도 일치하지 않으므로 기본거부�
   `x-workload-timestamp`로 PEP에 전달한다. `x-source-service`/`x-source-business`는 호출자가
   넘긴 값이 아니라 **컨테이너 자신의 환경설정에서만** 채워지므로 호출자가 덮어쓸 수 없다.
 - PEP는 `WORKLOAD_SECRETS`(5개 업무의 비밀키 매핑)를 갖고, 주장된 출발 업무의 비밀키로 서명을
-  재계산해 검증한다(30초 타임스탬프 윈도우로 재전송 방지). 검증에 성공한 경우에만, 그것도
-  **서명에 쓰인 업무명으로 대체되어** `source_business`가 OPA 입력에 채워진다. 검증에 실패하면
-  OPA를 호출하지도 않고 즉시 거부한다(`unregistered_workload`: 모르는 업무명 / `workload_signature_
-  invalid`: 등록된 업무명이지만 서명 불일치·만료).
+  재계산해 검증한다(30초 타임스탬프 윈도우로 서명의 유효시간을 확인하여 오래된 서명 요청을
+  거부한다 — 동일 서명이 그 윈도우 안에서 재사용되는 것까지 막는 완전한 재전송 방지는
+  아니며, 그러려면 서명을 1회용으로 소비하는 nonce 저장소가 추가로 필요하다). 검증에 성공한
+  경우에만, 그것도 **서명에 쓰인 업무명으로 대체되어** `source_business`가 OPA 입력에 채워진다.
+  검증에 실패하면 OPA를 호출하지도 않고 즉시 거부한다(`unregistered_workload`: 모르는 업무명 /
+  `workload_signature_invalid`: 등록된 업무명이지만 서명 불일치·만료).
 
 이 구조는 baseline/proposed 양쪽 PEP에 동일하게 적용된다 — 비교축은 "Rego 정책이 역할까지
 세분화하는가"이지 "신원을 검증하는가"가 아니기 때문이다. 그 결과 신원 위장(스푸핑)이나 미등록
@@ -218,7 +220,7 @@ docker compose -f compose.proposed.yml down -v
 ```
 
 `run_all.sh`는 다음을 순서대로 실행한다: ① `opa test` ② `collect_env.py`(환경 메타데이터 수집)
-③ 업무흐름 정책 테스트(30회 반복) ④ S/O 전송 CDS 테스트(30회 반복) ⑤ DB 도달성 테스트(25개
+③ 업무흐름 정책 테스트(30회 반복) ④ S/O 전송 CDS 테스트(30회 반복) ⑤ App·DB 도달성 테스트(45개
 조합) ⑥ 성능 테스트(4개 흐름 × 30배치 × 배치당 200회).
 
 개별 스크립트를 직접 실행할 수도 있다:
@@ -289,11 +291,19 @@ U06–U08은 PEP의 구조적 방어(단말 신뢰, 워크로드 신원 검증)�
 U01–U05는 Rego 정책의 세분화 여부에 따라 baseline/proposed 결과가 갈리는, 이 실험의 핵심
 대비 지점이다.
 
-### 8.2 DB 도달성 시나리오 — `scenarios/reachability_matrix.csv`
+### 8.2 도달성 시나리오 — `scenarios/reachability_matrix.csv`
 
-5개 업무 × 5개 DB = 25개 조합(자기 DB 5 + 교차 업무 DB 20) 전체를 `scripts/
-run_reachability_tests.py`가 `docker compose exec <app> python /app/probe.py <db_host> 5432`로
-TCP 연결 성공 여부만 확인한다(애플리케이션 인증 여부와 무관하게 네트워크 계층 도달성만 측정).
+논문 3.2.1절은 "업무서비스 간 연계"와 "데이터 저장계층에 대한 접근"을 서로 다른 통제지점으로
+구분한다. 이를 그대로 반영해 두 계층을 모두 검사한다.
+
+- **DB 도달성**: 5개 업무 × 5개 DB = 25개 조합(자기 DB 5 + 교차 업무 DB 20)
+- **업무서비스(App) 도달성**: 5개 업무 앱 사이의 자기 자신을 제외한 5×4=20개 조합
+
+총 45개 조합을 `scripts/run_reachability_tests.py`가 `docker compose exec <container> python
+/app/probe.py <target_host> <target_port>`로 TCP 연결 성공 여부만 확인한다(애플리케이션 인증
+여부와 무관하게 네트워크 계층 도달성만 측정). App 도달성 조합은 "정책 판단·집행과정을 우회한
+업무 간 직접 통신"이 네트워크 수준에서 실제로 불가능한지를 보여준다 — proposed에서는 PEP를
+거치지 않고 예컨대 `customer_app`이 `loan_app`에 직접 연결할 네트워크 경로 자체가 없어야 한다.
 
 ### 8.3 S/O 전송 CDS 시나리오 — `scenarios/cds_flows.csv`
 
@@ -303,8 +313,10 @@ C01–C06. §1에서 밝힌 대로 본 연구의 주 검증대상은 아니며, 
 
 동일한 정책·입력으로 동일 요청을 반복하는 것은 독립 표본이 아니다. 따라서 성능은 **배치
 단위**로 측정한다: `loan`이 시작점인 4개 정상 흐름(customer/credit/aml/approval)마다 warmup
-후 `--batches`(기본 30)개의 독립 배치를 만들고, 배치당 `--per-batch`(기본 200)회 요청한다.
-각 요청은 `loan_app`의 `/call`(§4의 실제 워크로드 경로)을 통해 이뤄진다.
+후 `--batches`(기본 30)개의 측정 배치를 만들고, 배치당 `--per-batch`(기본 200)회 요청한다.
+각 요청은 `loan_app`의 `/call`(§4의 실제 워크로드 경로)을 통해 이뤄진다. 배치는 통계적으로
+독립된 단위로 취급하는 반복 측정 구간일 뿐, 배치마다 프로세스나 컨테이너를 재기동하는 것은
+아니다(그런 의미의 "독립 배치"가 아니라는 점에 주의).
 
 ```bash
 python scripts/run_performance_tests.py --mode proposed --batches 30 --per-batch 200 --warmup 20
@@ -319,13 +331,13 @@ python scripts/run_performance_tests.py --mode proposed --batches 30 --per-batch
 
 | 파일 | 내용 |
 |---|---|
-| `experiment_summary.csv` | §11의 6대 지표를 baseline/proposed/relative_change로 요약 |
-| `exact_count_summary.csv` | 카테고리별(정상흐름/비인가흐름/교차DB도달/CDS) 전체 시나리오 수, 기대결과 일치 수, 일치율 — Fisher 검정 대신 사용하는 1차 보안·기능 결과표 |
+| `experiment_summary.csv` | §11의 핵심 지표를 baseline/proposed/relative_change로 요약 |
+| `exact_count_summary.csv` | 카테고리별(정상흐름/비인가흐름·정책범위/비인가흐름·구조범위/App도달/DB도달/CDS) 전체 시나리오 수, 기대결과 일치 수, 일치율 — Fisher 검정 대신 사용하는 1차 보안·기능 결과표 |
 | `blast_radius.csv` | 업무별 Blast Radius(§11) |
 | `latency_by_flow.csv` | 흐름×배치별 decision_ms/total_ms median |
 | `latency_confidence_intervals.csv` | decision_ms/total_ms의 median·IQR·p95·부트스트랩 95% CI(baseline/proposed) |
 | `statistical_tests.csv` | 배치 median 간 Mann-Whitney U 검정(보조 지표) |
-| `security_effectiveness.png` | Authorized Flow Success Rate / Unauthorized Flow Block Rate / Cross-Business DB Reachability Rate 막대그래프 |
+| `security_effectiveness.png` | Authorized Flow Success Rate / Unauthorized Flow Block Rate / Cross-Business Service Reachability Rate / Cross-Business DB Reachability Rate 막대그래프 |
 | `blast_radius.png` | 업무별 Blast Radius 막대그래프(baseline vs proposed) |
 | `latency_boxplot.png` | 배치별 decision_ms median 분포 박스플롯(baseline vs proposed) |
 | `experiment_metadata.json` | `collect_env.py`가 수집한 실험장비·소프트웨어 버전·정책/시나리오 해시(§14) |
@@ -335,27 +347,38 @@ python scripts/run_performance_tests.py --mode proposed --batches 30 --per-batch
 
 ## 11. 평가 지표 정의
 
-논문에서 다루는 여섯 가지 핵심 지표와 산출 방식:
-
 1. **Authorized Flow Success Rate** = A01–A05 중 `actual == allow` 비율
-2. **Unauthorized Flow Block Rate** = U01–U08 중 `actual == deny` 비율
-3. **Cross-Business DB Reachability Rate** = `reachability_matrix.csv`의
-   `cross_business_db` 20개 조합 중 `reachable == true` 비율
+2. **Unauthorized Flow Block Rate** = U01–U08 중 `actual == deny` 비율. baseline도 U06–U08(단말
+   미신뢰·미등록 워크로드·신원위장)은 PEP의 구조적 방어로 차단하므로, 이 값 하나만 보면
+   baseline의 차단률이 실제보다 높아 보일 수 있다. 따라서 `exact_count_summary.csv`에
+   `unauthorized_flows_policy_scope`(U01–U05, Rego 정책 세분화 여부로 결과가 갈리는 시나리오)와
+   `unauthorized_flows_structural_scope`(U06–U08, 두 환경 공통 방어)를 분리한 보조 지표를
+   함께 제공한다 — 정책 세분화 자체의 효과는 policy_scope 쪽 차이로 확인한다.
+3. **Cross-Business Reachability Rate** = `reachability_matrix.csv` 기준 두 개 하위 지표로
+   구성된다.
+   - Service(App): `cross_business_app` 20개 조합 중 `reachable == true` 비율
+   - DB: `cross_business_db` 20개 조합 중 `reachable == true` 비율
 4. **Blast Radius** = 업무 i에서 직접 도달 가능한 **타 업무 DB 수**(`reachable == true`인
    cross_business_db 조합 수, 0~4). `blast_radius.csv`에 업무별 값, `experiment_summary.csv`에
    평균값(`blast_radius_mean`)을 싣는다.
-5. **Latency** = PEP 감사로그의 `decision_ms`(OPA 정책판단 자체) / `total_ms`(PEP가 받은 요청부터
-   업스트림 응답까지 전체) — 배치 median의 median/IQR/p95/부트스트랩 95% CI
-6. **Audit Completeness** = 필수 필드(§13)를 모두 포함하고 `scenario_id`+`experiment_run_id`로
-   요청과 상관관계가 확인된 감사로그 수 / 전체 요청 수
+5. **Latency** = PEP 감사로그의 `decision_ms`(OPA 정책판단 자체) / `total_ms`(PEP가 요청을 받은
+   시점부터 목적 workload의 응답을 받을 때까지 걸린 **PEP 처리 지연시간** — 클라이언트가
+   체감하는 종단간(end-to-end) 지연시간이 아니라 PEP 내부 처리구간만을 가리킨다) — 배치
+   median의 median/IQR/p95/부트스트랩 95% CI
+6. **Audit Completeness** = 필수 필드(§13)를 모두 포함하고 요청별 고유 `attempt_id`+
+   `experiment_run_id`로 상관관계가 확인된 감사로그 수 / 전체 요청 수. 동일 시나리오를
+   `--repeat`로 반복해도 요청마다 서로 다른 attempt_id를 쓰므로, 30번 중 일부만 로그에 남는
+   상황을 놓치지 않는다.
 
 ## 12. 통계 처리 원칙
 
 - **보안·기능 시나리오(정책·CDS·도달성)**: 동일한 정책·입력으로 동일 요청을 반복하는 것은
   독립 표본이 아니므로 Fisher 정확검정을 적용하지 않는다. 대신 전체 시나리오 수, 기대결과
   일치 수, 성공률/차단률/도달률 같은 **exact count/rate**를 1차 결과로 보고한다
-  (`exact_count_summary.csv`).
-- **성능**: 4개 흐름 × 30개 독립 배치 × 배치당 200회로 측정하고, 배치 median을 통계 단위로
+  (`exact_count_summary.csv`). `cross_business_{app,db}_reachability`의 기대값은 모드마다
+  다르다는 점에 주의한다 — baseline(flat network)은 설계상 도달 가능한 것이 기대값이고,
+  proposed(업무별 segment)는 도달 불가능한 것이 기대값이다.
+- **성능**: 4개 흐름 × 30개 측정 배치 × 배치당 200회로 측정하고, 배치 median을 통계 단위로
   사용한다. Median, IQR, p95, 부트스트랩 95% CI를 제시하고(`latency_confidence_intervals.csv`),
   배치 median 간 Mann-Whitney U 검정을 보조 지표로 유지한다(`statistical_tests.csv`).
 - 유의수준, 반복횟수, 배치 구성은 실험 전에 고정한다(`run_all.sh`의 기본값: 정책·CDS 30회,
@@ -364,7 +387,10 @@ python scripts/run_performance_tests.py --mode proposed --batches 30 --per-batch
 ## 13. 감사로그 필드
 
 PEP(`results/pep_audit_{baseline,proposed}.jsonl`)는 매 요청마다 다음 필드를 기록한다(허용/
-거부 모든 경로에서 동일한 필드 집합을 남겨 Audit Completeness가 구조적으로 보장되도록 했다):
+거부 모든 경로에서 동일한 필드 집합을 남겨 Audit Completeness가 구조적으로 보장되도록 했다).
+`scenario_id` 필드는 정책·CDS 테스트에서는 시나리오 원래 ID가 아니라 `run_policy_tests.py`/
+`run_cds_tests.py`가 요청마다 생성하는 고유 `attempt_id`(예: `A01-r001`)를 담는다 — 동일
+시나리오를 반복해도 요청 단위로 감사로그를 정확히 대응시키기 위함이다:
 
 `ts`, `request_id`, `experiment_run_id`, `scenario_id`, `user_role`, `claimed_source_service`,
 `verified_workload_identity`, `source_business`, `destination`, `action`, `purpose`,

@@ -21,13 +21,13 @@ APP_PORTS = {
 }
 
 
-def call_via_workload(client: httpx.Client, source_service: str, scenario: dict, experiment_run_id: str) -> tuple[int, str, float]:
+def call_via_workload(client: httpx.Client, source_service: str, scenario: dict, experiment_run_id: str, attempt_id: str) -> tuple[int, str, float]:
     base_url = f"http://127.0.0.1:{APP_PORTS[source_service]}"
     headers = {
         "x-user": "lab-user",
         "x-role": scenario["role"],
         "x-device-trust": scenario["device_trust"],
-        "x-scenario-id": scenario["scenario_id"],
+        "x-scenario-id": attempt_id,
         "x-experiment-run-id": experiment_run_id,
     }
     payload = {
@@ -51,7 +51,7 @@ def call_via_workload(client: httpx.Client, source_service: str, scenario: dict,
         return 0, f"{type(exc).__name__}: {exc}", latency_ms
 
 
-def call_pep_directly(client: httpx.Client, pep_url: str, scenario: dict, experiment_run_id: str) -> tuple[int, str, float]:
+def call_pep_directly(client: httpx.Client, pep_url: str, scenario: dict, experiment_run_id: str, attempt_id: str) -> tuple[int, str, float]:
     headers = {
         "x-user": "lab-user",
         "x-role": scenario["role"],
@@ -61,7 +61,7 @@ def call_pep_directly(client: httpx.Client, pep_url: str, scenario: dict, experi
         "x-purpose": scenario["purpose"],
         "x-data-grade": scenario["data_grade"],
         "x-transfer-approved": "false",
-        "x-scenario-id": scenario["scenario_id"],
+        "x-scenario-id": attempt_id,
         "x-experiment-run-id": experiment_run_id,
     }
     signature_mode = scenario["signature_mode"]
@@ -99,10 +99,13 @@ def main() -> int:
     with httpx.Client(timeout=10.0) as client:
         for scenario in scenarios:
             for run_id in range(1, args.repeat + 1):
+                # 요청마다 고유한 attempt_id를 PEP의 scenario_id로 전달해, 반복된
+                # 동일 시나리오라도 감사로그와 1:1로 상관관계를 확인할 수 있게 한다.
+                attempt_id = f"{scenario['scenario_id']}-r{run_id:03d}"
                 if scenario["entry_point"] == "call":
-                    status_code, error, latency_ms = call_via_workload(client, scenario["source_service"], scenario, experiment_run_id)
+                    status_code, error, latency_ms = call_via_workload(client, scenario["source_service"], scenario, experiment_run_id, attempt_id)
                 else:
-                    status_code, error, latency_ms = call_pep_directly(client, args.pep_url, scenario, experiment_run_id)
+                    status_code, error, latency_ms = call_pep_directly(client, args.pep_url, scenario, experiment_run_id, attempt_id)
                 actual = "allow" if 200 <= status_code < 300 else "deny"
                 expected = scenario[f"expected_{args.mode}"]
                 rows.append({
@@ -110,6 +113,7 @@ def main() -> int:
                     "mode": args.mode,
                     "run_id": run_id,
                     "experiment_run_id": experiment_run_id,
+                    "attempt_id": attempt_id,
                     "status_code": status_code,
                     "actual": actual,
                     "expected": expected,
