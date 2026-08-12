@@ -3,13 +3,13 @@ control_area,n2sf_id,control_name,prototype_implementation,test_case,evidence
 단말,N2SF-DA-2,정보서비스 식별 및 제한,PEP가 SERVICE_MAP에 등록된 목적지로만 호출을 제한(미등록 목적지는 unknown_destination으로 즉시 거부),U07/U08,PEP audit
 단말,N2SF-DA-4,인증된 단말의 접속 관리,x-device-trust와 사용자·역할·목적을 정책 입력으로 사용,U06/C06,OPA decision log
 식별인증,N2SF-MA-2,사용자 계정 다중요소 인증,실험에서는 신뢰 헤더로 추상화하고 실제 적용 시 IdP/MFA 연계,U06/C06,요청 헤더 및 결정 로그
-분리,N2SF-SG-3 / N2SF-IS-1 (요검증),소프트웨어 기반 분리 / 프로세스 격리,Docker 컨테이너는 호스트 커널을 공유하는 소프트웨어·프로세스 수준 격리이며 별도 OS 인스턴스 분리(N2SF-SG-2)는 아님 — 정확한 통제ID는 N2SF 가이드라인 원문 대조 필요,Reachability matrix (5x5=25),Docker inspect
-분리,N2SF-SG-4,영역·기능별 IP 체계 분리,업무별 Docker bridge network 구성(internal 네트워크),Reachability matrix (5x5=25),Docker network inspect
-분리,N2SF-SG-5,보안·운영 영역 분리,OPA control network와 업무 segment 분리,Reachability matrix (5x5=25),Docker network inspect
+분리,N2SF-SG-3 / N2SF-IS-1,소프트웨어 기반 분리 / 프로세스 격리,Docker 컨테이너는 호스트 커널을 공유하는 소프트웨어·프로세스 수준 격리이며 별도 OS 인스턴스 분리(N2SF-SG-2)는 아님,Reachability matrix (45 paths: 25 DB + 20 service),Docker inspect
+분리,N2SF-SG-4,영역·기능별 IP 체계 분리,업무별 Docker bridge network 구성(internal 네트워크),Reachability matrix (45 paths: 25 DB + 20 service),Docker network inspect
+분리,N2SF-SG-5,보안·운영 영역 분리,부분 구현(논리적 모의) — 공식 통제는 보안·운영관리 인프라의 물리적으로 분리된 네트워크 구성을 요구하나 본 실험은 Docker control network와 업무 segment 간 논리적 분리로 대신함,Reachability matrix (45 paths: 25 DB + 20 service),Docker network inspect
 분리,N2SF-SG-M4,사용자·단말·서비스별 접근 설정 및 모니터링,role×source_business×destination×action×purpose 5-튜플 기반 Rego 정책,A01-A05/U01-U08,policy file and log
 분리,N2SF-SG-M5,정책 위반 자동 알림·차단·기록,정책 거부 시 HTTP 403 및 JSONL 감사기록,U01-U08,PEP audit
-분리,N2SF-EB-3 (요검증),기본차단 후 필요 통신만 허용,proposed.rego의 default-deny + permissions 5-튜플 allowlist,A01-A05/U01-U08,policy file
-분리,N2SF-EB-5 (요검증),인가된 경유지를 통한 통신경로 강제,모든 업무 간 호출은 PEP만을 경유하도록 강제(직접 경로는 네트워크 계층에서 차단),Reachability matrix (cross_business_app),raw_reachability CSV
+분리,N2SF-EB-3,기본차단 후 필요 통신만 허용(화이트리스트 기반 통신 허용),proposed.rego의 default-deny + permissions 5-튜플 allowlist,A01-A05/U01-U08,policy file
+분리,N2SF-EB-5,인가된 경유지를 통한 통신경로 강제(통신 경유 강제화),모든 업무 간 호출은 PEP만을 경유하도록 강제(직접 경로는 네트워크 계층에서 차단),Reachability matrix (cross_business_app),raw_reachability CSV
 정보흐름,N2SF-IF-1,동적 정보흐름 통제,요청별 사용자·역할·출발업무·목적업무·행위·목적·등급 평가,A01-A05/U01-U08,OPA decision log
 정보흐름,N2SF-IF-6,정보 필터링 규칙 설정,permissions 5-튜플과 S/O 전송 조건을 Rego로 정의,U01-U08/C01-C06,policy file
 정보흐름,N2SF-IF-8,비인가 정보 이동 차단,업무 간 비인가 경로 및 직접 S→O 전송 차단,U01-U08/C03,HTTP status and log

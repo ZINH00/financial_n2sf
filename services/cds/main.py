@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 OPA_URL = os.getenv("CDS_OPA_URL", "http://opa:8181/v1/data/financial/cds/decision")
@@ -111,7 +112,12 @@ async def transfer(
     except httpx.HTTPError:
         deny("cds_opa_transport_error", 503, (time.perf_counter() - decision_started) * 1000)
     decision_ms = (time.perf_counter() - decision_started) * 1000
-    result = (opa_response.json().get("result") if opa_response.status_code == 200 else None) or {}
+    if opa_response.status_code != 200:
+        # OPA 자체 오류(예: 500)는 "정책이 거부했다"와 다른 사유다. 이걸 구분하지
+        # 않으면 OPA 장애가 정책거부(403 policy_denied)로 오분류되어, 실제로는
+        # 정책판단조차 이뤄지지 않은 요청이 "정책상 거부됨"으로 기록된다.
+        deny("cds_opa_error", 503, decision_ms)
+    result = opa_response.json().get("result") or {}
     allow = bool(result.get("allow", False))
     reason = result.get("reason", "policy_denied")
     audit_base = {**audit_prefix, "decision_ms": decision_ms}
@@ -131,4 +137,7 @@ async def transfer(
     upstream_ms = (time.perf_counter() - upstream_started) * 1000
     total_ms = (time.perf_counter() - total_started) * 1000
     write_audit({**audit_base, "decision": "allow", "reason": reason, "upstream_ms": upstream_ms, "total_ms": total_ms, "upstream_status": response.status_code})
-    return {"status": "transferred", "destination": request.destination, "upstream_status": response.status_code, "content_hash": digest, "request_id": request_id}
+    # O영역 stub이 실제로 반환한 HTTP status를 그대로 보존한다(PEP의 upstream status
+    # 보존 방식과 동일) — CDS 자체 응답을 항상 200으로 감싸면 O영역 서비스 장애가
+    # 성공으로 기록될 수 있다.
+    return JSONResponse(status_code=response.status_code, content={"status": "transferred", "destination": request.destination, "upstream_status": response.status_code, "content_hash": digest, "request_id": request_id})

@@ -191,7 +191,15 @@ async def call_service(
     }
     url = f"{PEP_URL}/proxy/{call.destination}{call.path}"
     client: httpx.AsyncClient = http_request.app.state.http_client
-    response = await client.request(call.method.upper(), url, headers=headers, json=call.body)
+    method = call.method.upper()
+    # httpx의 json=None은 파라미터를 생략한 것과 같아 길이 0의 body가 전송된다.
+    # POST/PUT/PATCH 목적지 엔드포인트는 Pydantic 모델 body를 요구하므로(필드에
+    # 기본값이 있어도 body 자체가 비어 있으면 FastAPI가 JSON 파싱 실패로 422를
+    # 반환한다), body가 없을 때는 빈 객체 {}를 명시적으로 보낸다.
+    request_kwargs: dict[str, Any] = {}
+    if method in {"POST", "PUT", "PATCH"}:
+        request_kwargs["json"] = call.body if call.body is not None else {}
+    response = await client.request(method, url, headers=headers, **request_kwargs)
     audit({"event": "cross_service_call", "destination": call.destination, "status": response.status_code, "scenario_id": x_scenario_id})
     try:
         body = response.json()

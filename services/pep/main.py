@@ -214,6 +214,8 @@ async def proxy(
     body = await request.body()
     target = f"{SERVICE_MAP[destination]}/{path}"
     forward_headers = {"x-policy-user": x_user, "x-policy-role": x_role, "x-request-id": request_id}
+    if request.headers.get("content-type"):
+        forward_headers["content-type"] = request.headers["content-type"]
     upstream_started = time.perf_counter()
     try:
         upstream = await client.request(request.method, target, params=request.query_params, content=body, headers=forward_headers)
