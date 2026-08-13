@@ -14,7 +14,7 @@ from common import bootstrap_ci, iqr, percentile, read_jsonl, to_bool_series
 
 # README §11 평가 지표 정의가 여기서 산출하는 값과 항상 일치하도록 관리한다:
 # Authorized Flow Success Rate, Unauthorized Flow Block Rate(+policy/structural scope),
-# Cross-Business Service/DB Reachability Rate, Blast Radius,
+# Cross-Business Service/DB Reachability Rate, Blast Radius(mean/max),
 # Policy Decision(PEP 처리 지연시간) Latency, Audit Completeness.
 
 REQUIRED_AUDIT_FIELDS = [
@@ -32,6 +32,44 @@ REQUIRED_AUDIT_FIELDS = [
 POLICY_VIOLATION_TYPES = {"role_mismatch", "purpose_mismatch", "action_mismatch", "reverse_direction", "unrelated_cross_business"}
 STRUCTURAL_VIOLATION_TYPES = {"untrusted_device", "unregistered_workload", "identity_spoofing"}
 
+# AFSR/UFBR(Authorized/Unauthorized Flow Success/Block Rate)은 "보안통제가 명시적으로
+# 내린 정책 판단"의 비율이어야 한다. 그런데 run_policy_tests.py의 actual(allow/deny)은
+# HTTP status 2xx 여부로만 정해지므로, PEP/OPA 연결 실패나 목적 workload 장애 같은
+# 정책과 무관한 실행 오류도 그대로 "deny"에 섞여 들어간다. 아래 reason들은 PEP가
+# 실제 Rego 판단에 도달하지 못했음을 뜻하므로 AFSR/UFBR 분모·분자에서 제외하고
+# 별도 execution_errors로 집계한다(unregistered_workload/workload_signature_invalid는
+# 반대로 U07/U08이 검증하려는 정책적 판단 그 자체이므로 제외 대상이 아니다).
+STRUCTURAL_ERROR_REASONS = {"opa_transport_error", "opa_error", "upstream_transport_error", "unknown_destination"}
+
+
+def classify_execution_errors(policy_df: pd.DataFrame, audit_rows: list[dict]) -> pd.DataFrame:
+    """attempt_id+experiment_run_id로 PEP 감사로그와 1:1 조인해, 각 요청이 정책과
+    무관한 실행 오류(STRUCTURAL_ERROR_REASONS)로 끝났는지 표시하는 is_execution_error
+    컬럼을 추가한다. 감사로그에서 매칭되는 기록이 아예 없으면(예: 요청 자체가 PEP에
+    도달하지 못함) 보수적으로 실행 오류로 취급한다."""
+    index: dict[tuple[str, str], dict] = {}
+    for row in audit_rows:
+        key = (str(row.get("scenario_id", "")), str(row.get("experiment_run_id", "")))
+        index[key] = row
+    is_error = []
+    audit_reason = []
+    for _, prow in policy_df.iterrows():
+        key = (str(prow["attempt_id"]), str(prow["experiment_run_id"]))
+        rec = index.get(key)
+        reason = rec.get("reason") if rec else None
+        audit_reason.append(reason)
+        is_error.append(reason is None or reason in STRUCTURAL_ERROR_REASONS)
+    out = policy_df.copy()
+    out["audit_reason"] = audit_reason
+    out["is_execution_error"] = is_error
+    return out
+
+
+def rate_valid(df: pd.DataFrame, value: str) -> float:
+    """is_execution_error가 True인 행(정책판단이 완료되지 않은 요청)을 제외하고 비율을 계산한다."""
+    valid = df[~df["is_execution_error"]] if "is_execution_error" in df.columns else df
+    return float((valid["actual"].astype(str) == value).mean()) if len(valid) else float("nan")
+
 PALETTE = {
     "surface": "#fcfcfb",
     "text_primary": "#0b0b0b",
@@ -47,10 +85,6 @@ PALETTE = {
 def latest(pattern: str) -> Path | None:
     matches = sorted(Path(p) for p in glob.glob(pattern))
     return matches[-1] if matches else None
-
-
-def rate(series: pd.Series, value: str) -> float:
-    return float((series.astype(str) == value).mean()) if len(series) else float("nan")
 
 
 def blast_radius(reach_df: pd.DataFrame) -> pd.DataFrame:
@@ -256,6 +290,9 @@ def main() -> int:
         print("warning: pep_audit_{baseline,proposed}.jsonl not found or empty under --results-dir; "
               "latency/audit-completeness metrics will be NaN. Did the PEP write to ./results as /logs?")
 
+    pb = classify_execution_errors(pb, audit_b)
+    pp = classify_execution_errors(pp, audit_p)
+
     authorized_b = pb[pb["scenario_id"].astype(str).str.startswith("A")]
     authorized_p = pp[pp["scenario_id"].astype(str).str.startswith("A")]
     unauthorized_b = pb[pb["scenario_id"].astype(str).str.startswith("U")]
@@ -293,13 +330,14 @@ def main() -> int:
     completeness_p = audit_completeness(pp, audit_p)
 
     summary = pd.DataFrame([
-        {"metric": "authorized_flow_success_rate", "baseline": rate(authorized_b["actual"], "allow"), "proposed": rate(authorized_p["actual"], "allow")},
-        {"metric": "unauthorized_flow_block_rate", "baseline": rate(unauthorized_b["actual"], "deny"), "proposed": rate(unauthorized_p["actual"], "deny")},
-        {"metric": "unauthorized_flow_block_rate_policy_scope", "baseline": rate(unauthorized_policy_b["actual"], "deny"), "proposed": rate(unauthorized_policy_p["actual"], "deny")},
-        {"metric": "unauthorized_flow_block_rate_structural_scope", "baseline": rate(unauthorized_structural_b["actual"], "deny"), "proposed": rate(unauthorized_structural_p["actual"], "deny")},
+        {"metric": "authorized_flow_success_rate", "baseline": rate_valid(authorized_b, "allow"), "proposed": rate_valid(authorized_p, "allow")},
+        {"metric": "unauthorized_flow_block_rate", "baseline": rate_valid(unauthorized_b, "deny"), "proposed": rate_valid(unauthorized_p, "deny")},
+        {"metric": "unauthorized_flow_block_rate_policy_scope", "baseline": rate_valid(unauthorized_policy_b, "deny"), "proposed": rate_valid(unauthorized_policy_p, "deny")},
+        {"metric": "unauthorized_flow_block_rate_structural_scope", "baseline": rate_valid(unauthorized_structural_b, "deny"), "proposed": rate_valid(unauthorized_structural_p, "deny")},
         {"metric": "cross_business_app_reachability_rate", "baseline": to_bool_series(cross_app_b["reachable"]).mean() if len(cross_app_b) else float("nan"), "proposed": to_bool_series(cross_app_p["reachable"]).mean() if len(cross_app_p) else float("nan")},
         {"metric": "cross_business_db_reachability_rate", "baseline": to_bool_series(cross_b["reachable"]).mean() if len(cross_b) else float("nan"), "proposed": to_bool_series(cross_p["reachable"]).mean() if len(cross_p) else float("nan")},
         {"metric": "blast_radius_mean", "baseline": blast_b["blast_radius"].mean() if len(blast_b) else float("nan"), "proposed": blast_p["blast_radius"].mean() if len(blast_p) else float("nan")},
+        {"metric": "blast_radius_max", "baseline": blast_b["blast_radius"].max() if len(blast_b) else float("nan"), "proposed": blast_p["blast_radius"].max() if len(blast_p) else float("nan")},
         {"metric": "decision_latency_median_ms", "baseline": decision_b["median"], "proposed": decision_p["median"]},
         {"metric": "decision_latency_p95_ms", "baseline": decision_b["p95"], "proposed": decision_p["p95"]},
         {"metric": "total_latency_median_ms", "baseline": total_b["median"], "proposed": total_p["median"]},
@@ -326,21 +364,30 @@ def main() -> int:
     # reachable=false가 기대값이다. 두 모드에 같은 기대값(false)을 쓰면 baseline이
     # 마치 "잘못된 결과"만 낸 것처럼 보이는데, baseline은 원래 그렇게 동작하도록
     # 설계된 비교군이므로 이는 잘못된 계산이다.
+    def count_row(category: str, mode: str, df: pd.DataFrame) -> dict:
+        # total/expected_match은 "정책판단이 정상 완료된 요청" 기준으로만 집계한다
+        # (AFSR/UFBR의 N을 실행 오류로 오염시키지 않기 위함). 실행 오류 건수는
+        # execution_errors로 별도 확인할 수 있다.
+        errors = int(df["is_execution_error"].sum())
+        valid = df[~df["is_execution_error"]]
+        matched = int((valid["actual"] == valid["expected"]).sum()) if len(valid) else 0
+        return {"category": category, "mode": mode, "total": len(valid), "expected_match": matched, "execution_errors": errors}
+
     exact_counts = pd.DataFrame([
-        {"category": "authorized_flows", "mode": "baseline", "total": len(authorized_b), "expected_match": int((authorized_b["actual"] == authorized_b["expected"]).sum())},
-        {"category": "authorized_flows", "mode": "proposed", "total": len(authorized_p), "expected_match": int((authorized_p["actual"] == authorized_p["expected"]).sum())},
-        {"category": "unauthorized_flows", "mode": "baseline", "total": len(unauthorized_b), "expected_match": int((unauthorized_b["actual"] == unauthorized_b["expected"]).sum())},
-        {"category": "unauthorized_flows", "mode": "proposed", "total": len(unauthorized_p), "expected_match": int((unauthorized_p["actual"] == unauthorized_p["expected"]).sum())},
-        {"category": "unauthorized_flows_policy_scope", "mode": "baseline", "total": len(unauthorized_policy_b), "expected_match": int((unauthorized_policy_b["actual"] == unauthorized_policy_b["expected"]).sum())},
-        {"category": "unauthorized_flows_policy_scope", "mode": "proposed", "total": len(unauthorized_policy_p), "expected_match": int((unauthorized_policy_p["actual"] == unauthorized_policy_p["expected"]).sum())},
-        {"category": "unauthorized_flows_structural_scope", "mode": "baseline", "total": len(unauthorized_structural_b), "expected_match": int((unauthorized_structural_b["actual"] == unauthorized_structural_b["expected"]).sum())},
-        {"category": "unauthorized_flows_structural_scope", "mode": "proposed", "total": len(unauthorized_structural_p), "expected_match": int((unauthorized_structural_p["actual"] == unauthorized_structural_p["expected"]).sum())},
-        {"category": "cross_business_app_reachability", "mode": "baseline", "total": len(cross_app_b), "expected_match": int(to_bool_series(cross_app_b["reachable"]).sum())},
-        {"category": "cross_business_app_reachability", "mode": "proposed", "total": len(cross_app_p), "expected_match": int((~to_bool_series(cross_app_p["reachable"])).sum())},
-        {"category": "cross_business_db_reachability", "mode": "baseline", "total": len(cross_b), "expected_match": int(to_bool_series(cross_b["reachable"]).sum())},
-        {"category": "cross_business_db_reachability", "mode": "proposed", "total": len(cross_p), "expected_match": int((~to_bool_series(cross_p["reachable"])).sum())},
-        {"category": "cds_transfer", "mode": "baseline", "total": len(cb), "expected_match": int(to_bool_series(cb["matches_expected"]).sum())},
-        {"category": "cds_transfer", "mode": "proposed", "total": len(cp), "expected_match": int(to_bool_series(cp["matches_expected"]).sum())},
+        count_row("authorized_flows", "baseline", authorized_b),
+        count_row("authorized_flows", "proposed", authorized_p),
+        count_row("unauthorized_flows", "baseline", unauthorized_b),
+        count_row("unauthorized_flows", "proposed", unauthorized_p),
+        count_row("unauthorized_flows_policy_scope", "baseline", unauthorized_policy_b),
+        count_row("unauthorized_flows_policy_scope", "proposed", unauthorized_policy_p),
+        count_row("unauthorized_flows_structural_scope", "baseline", unauthorized_structural_b),
+        count_row("unauthorized_flows_structural_scope", "proposed", unauthorized_structural_p),
+        {"category": "cross_business_app_reachability", "mode": "baseline", "total": len(cross_app_b), "expected_match": int(to_bool_series(cross_app_b["reachable"]).sum()), "execution_errors": 0},
+        {"category": "cross_business_app_reachability", "mode": "proposed", "total": len(cross_app_p), "expected_match": int((~to_bool_series(cross_app_p["reachable"])).sum()), "execution_errors": 0},
+        {"category": "cross_business_db_reachability", "mode": "baseline", "total": len(cross_b), "expected_match": int(to_bool_series(cross_b["reachable"]).sum()), "execution_errors": 0},
+        {"category": "cross_business_db_reachability", "mode": "proposed", "total": len(cross_p), "expected_match": int((~to_bool_series(cross_p["reachable"])).sum()), "execution_errors": 0},
+        {"category": "cds_transfer", "mode": "baseline", "total": len(cb), "expected_match": int(to_bool_series(cb["matches_expected"]).sum()), "execution_errors": 0},
+        {"category": "cds_transfer", "mode": "proposed", "total": len(cp), "expected_match": int(to_bool_series(cp["matches_expected"]).sum()), "execution_errors": 0},
     ])
     exact_counts["match_rate"] = exact_counts["expected_match"] / exact_counts["total"].replace(0, pd.NA)
     exact_counts.to_csv(results / "exact_count_summary.csv", index=False)

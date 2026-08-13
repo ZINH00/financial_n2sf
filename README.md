@@ -350,7 +350,7 @@ python scripts/run_performance_tests.py --mode proposed --batches 30 --per-batch
 | 파일 | 내용 |
 |---|---|
 | `experiment_summary.csv` | §11의 핵심 지표를 baseline/proposed/relative_change로 요약 |
-| `exact_count_summary.csv` | 카테고리별(정상흐름/비인가흐름·정책범위/비인가흐름·구조범위/App도달/DB도달/CDS) 전체 시나리오 수, 기대결과 일치 수, 일치율 — Fisher 검정 대신 사용하는 1차 보안·기능 결과표 |
+| `exact_count_summary.csv` | 카테고리별(정상흐름/비인가흐름·정책범위/비인가흐름·구조범위/App도달/DB도달/CDS) **정책판단이 완료된** 요청 수, 기대결과 일치 수, 실행 오류(execution_errors) 건수, 일치율 — Fisher 검정 대신 사용하는 1차 보안·기능 결과표 |
 | `blast_radius.csv` | 업무별 Blast Radius(§11) |
 | `latency_by_flow.csv` | 흐름×배치별 decision_ms/total_ms median |
 | `latency_confidence_intervals.csv` | decision_ms/total_ms의 median·IQR·p95·부트스트랩 95% CI(baseline/proposed) |
@@ -365,20 +365,38 @@ python scripts/run_performance_tests.py --mode proposed --batches 30 --per-batch
 
 ## 11. 평가 지표 정의
 
-1. **Authorized Flow Success Rate** = A01–A05 중 `actual == allow` 비율
-2. **Unauthorized Flow Block Rate** = U01–U08 중 `actual == deny` 비율. baseline도 U06–U08(단말
-   미신뢰·미등록 워크로드·신원위장)은 PEP의 구조적 방어로 차단하므로, 이 값 하나만 보면
-   baseline의 차단률이 실제보다 높아 보일 수 있다. 따라서 `exact_count_summary.csv`에
-   `unauthorized_flows_policy_scope`(U01–U05, Rego 정책 세분화 여부로 결과가 갈리는 시나리오)와
-   `unauthorized_flows_structural_scope`(U06–U08, 두 환경 공통 방어)를 분리한 보조 지표를
-   함께 제공한다 — 정책 세분화 자체의 효과는 policy_scope 쪽 차이로 확인한다.
+Authorized/Unauthorized Flow 지표(1, 2번)는 **정책판단이 실제로 완료된 요청만을 분모로
+삼는다.** `run_policy_tests.py`가 기록하는 `actual`(allow/deny)은 HTTP status 2xx 여부만
+보므로, PEP→OPA 연결 실패(`opa_transport_error`)·OPA 자체 오류(`opa_error`)·목적
+workload 연결 실패(`upstream_transport_error`)·미등록 목적지(`unknown_destination`) 같은
+정책과 무관한 실행 오류도 비2xx라서 그대로 "deny"로 섞여 들어갈 수 있다.
+`analyze_results.py`는 `attempt_id`+`experiment_run_id`로 각 요청을 PEP 감사로그와 1:1
+조인해 실제 `reason`을 확인하고, 위 실행 오류 사유이거나 애초에 매칭되는 감사로그가 없는
+요청은 분모·분자에서 제외한 뒤 `exact_count_summary.csv`의 `execution_errors` 컬럼으로
+별도 집계한다(신원 미검증 계열 사유인 `unregistered_workload`/`workload_signature_invalid`는
+실행 오류가 아니라 U07/U08이 검증하려는 정책적 판단 그 자체이므로 제외 대상이 아니다).
+
+1. **Authorized Flow Success Rate** = A01–A05 중 정책판단이 완료된 요청 가운데 `actual ==
+   allow` 비율
+2. **Unauthorized Flow Block Rate** = U01–U08 중 정책판단이 완료된 요청 가운데 `actual ==
+   deny` 비율. baseline도 U06–U08(단말 미신뢰·미등록 워크로드·신원위장)은 PEP의 구조적
+   방어로 차단하므로, 이 값 하나만 보면 baseline의 차단률이 실제보다 높아 보일 수 있다.
+   따라서 `exact_count_summary.csv`에 `unauthorized_flows_policy_scope`(U01–U05, Rego 정책
+   세분화 여부로 결과가 갈리는 시나리오)와 `unauthorized_flows_structural_scope`(U06–U08,
+   두 환경 공통 방어)를 분리한 보조 지표를 함께 제공한다 — 정책 세분화 자체의 효과는
+   policy_scope 쪽 차이로 확인한다.
 3. **Cross-Business Reachability Rate** = `reachability_matrix.csv` 기준 두 개 하위 지표로
-   구성된다.
+   구성된다(PEP/OPA를 거치지 않는 순수 TCP 도달성 측정이라 실행 오류 제외 로직과는 무관하다).
    - Service(App): `cross_business_app` 20개 조합 중 `reachable == true` 비율
    - DB: `cross_business_db` 20개 조합 중 `reachable == true` 비율
 4. **Blast Radius** = 업무 i에서 직접 도달 가능한 **타 업무 DB 수**(`reachable == true`인
-   cross_business_db 조합 수, 0~4). `blast_radius.csv`에 업무별 값, `experiment_summary.csv`에
-   평균값(`blast_radius_mean`)을 싣는다.
+   cross_business_db 조합 수, 0~4). `blast_radius.csv`에 업무별 값을 싣고,
+   `experiment_summary.csv`에는 평균값(`blast_radius_mean`)과 최댓값(`blast_radius_max`,
+   침해 시 노출범위가 가장 큰 업무 기준)을 함께 싣는다. 5개 업무가 서로 동일한 방식으로
+   나머지 4개 업무 DB를 검사하므로 평균은 `(M-1) × DB Reachability Rate`(M=5)와 수학적으로
+   같은 값이 나온다 — 이 때문에 논문에서 두 지표를 독립적인 별개 효과처럼 나란히 제시하지
+   않도록 주의한다. 업무별 격차를 보여주려는 목적이라면 평균보다 `blast_radius_max`나
+   `blast_radius.csv`의 업무별 값이 더 적합하다.
 5. **Latency** = PEP 감사로그의 `decision_ms`(PEP→PDP 정책결정 요청·응답 왕복시간 — PEP가
    OPA에 HTTP 요청을 보내고 응답을 받기까지의 시간이며, 네트워크·직렬화/역직렬화를 포함한다.
    OPA 내부에서 Rego 평가에만 걸린 순수 연산시간이 아니다) / `total_ms`(PEP가 요청을 받은
