@@ -378,21 +378,24 @@ networks:
     driver: bridge
   o_zone:
     driver: bridge
+  # customer_app~approval_app는 각자 자신의 segment 네트워크 하나에만 연결되어
+  # 있는데, 그 네트워크에 internal: true를 걸면(외부/인터넷으로 나가는 경로 차단
+  # 용도) Docker Desktop(Windows/WSL2)에서 호스트→컨테이너 포트 게시(1800X)까지
+  # 함께 막히는 경우가 있다(다른 비-internal 네트워크에도 걸쳐 있는 pep/opa/
+  # transfer_cds는 영향받지 않았다). 업무 간 격리는 internal 플래그가 아니라
+  # "서로 다른 Docker 네트워크에 속해 있고 PEP만 여러 네트워크를 넘나든다"는
+  # 사실 자체로 이미 보장되므로, internal: true를 빼도 횡적 이동 차단 효과는
+  # 그대로 유지된다.
   customer_segment:
     driver: bridge
-    internal: true
   loan_segment:
     driver: bridge
-    internal: true
   credit_segment:
     driver: bridge
-    internal: true
   aml_segment:
     driver: bridge
-    internal: true
   approval_segment:
     driver: bridge
-    internal: true
 volumes:
   customer_data: {}
   loan_data: {}

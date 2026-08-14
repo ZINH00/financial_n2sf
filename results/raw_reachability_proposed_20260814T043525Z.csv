@@ -1,0 +1,46 @@
+source_container,target_host,target_port,relationship,mode,reachable,elapsed_ms,returncode,error
+customer_app,customer_db,5432,own_db,proposed,true,2.738,0,
+customer_app,loan_db,5432,cross_business_db,proposed,false,4002.306,1,gaierror: [Errno -5] No address associated with hostname
+customer_app,credit_db,5432,cross_business_db,proposed,false,4002.875,1,gaierror: [Errno -5] No address associated with hostname
+customer_app,aml_db,5432,cross_business_db,proposed,false,4002.642,1,gaierror: [Errno -5] No address associated with hostname
+customer_app,approval_db,5432,cross_business_db,proposed,false,3993.765,1,gaierror: [Errno -2] Name or service not known
+loan_app,loan_db,5432,own_db,proposed,true,2.172,0,
+loan_app,customer_db,5432,cross_business_db,proposed,false,4003.449,1,gaierror: [Errno -5] No address associated with hostname
+loan_app,credit_db,5432,cross_business_db,proposed,false,3984.239,1,gaierror: [Errno -2] Name or service not known
+loan_app,aml_db,5432,cross_business_db,proposed,false,3991.199,1,gaierror: [Errno -2] Name or service not known
+loan_app,approval_db,5432,cross_business_db,proposed,false,3975.248,1,gaierror: [Errno -2] Name or service not known
+credit_app,credit_db,5432,own_db,proposed,true,2.145,0,
+credit_app,customer_db,5432,cross_business_db,proposed,false,3949.973,1,gaierror: [Errno -2] Name or service not known
+credit_app,loan_db,5432,cross_business_db,proposed,false,3983.556,1,gaierror: [Errno -2] Name or service not known
+credit_app,aml_db,5432,cross_business_db,proposed,false,3973.446,1,gaierror: [Errno -2] Name or service not known
+credit_app,approval_db,5432,cross_business_db,proposed,false,3970.684,1,gaierror: [Errno -2] Name or service not known
+aml_app,aml_db,5432,own_db,proposed,true,2.232,0,
+aml_app,customer_db,5432,cross_business_db,proposed,false,3986.048,1,gaierror: [Errno -2] Name or service not known
+aml_app,loan_db,5432,cross_business_db,proposed,false,3976.743,1,gaierror: [Errno -2] Name or service not known
+aml_app,credit_db,5432,cross_business_db,proposed,false,3951.080,1,gaierror: [Errno -2] Name or service not known
+aml_app,approval_db,5432,cross_business_db,proposed,false,3961.970,1,gaierror: [Errno -2] Name or service not known
+approval_app,approval_db,5432,own_db,proposed,true,2.316,0,
+approval_app,customer_db,5432,cross_business_db,proposed,false,3989.508,1,gaierror: [Errno -2] Name or service not known
+approval_app,loan_db,5432,cross_business_db,proposed,false,3974.685,1,gaierror: [Errno -2] Name or service not known
+approval_app,credit_db,5432,cross_business_db,proposed,false,3976.976,1,gaierror: [Errno -2] Name or service not known
+approval_app,aml_db,5432,cross_business_db,proposed,false,3949.663,1,gaierror: [Errno -2] Name or service not known
+customer_app,loan_app,8000,cross_business_app,proposed,false,4003.240,1,gaierror: [Errno -5] No address associated with hostname
+customer_app,credit_app,8000,cross_business_app,proposed,false,4003.079,1,gaierror: [Errno -5] No address associated with hostname
+customer_app,aml_app,8000,cross_business_app,proposed,false,4002.950,1,gaierror: [Errno -5] No address associated with hostname
+customer_app,approval_app,8000,cross_business_app,proposed,false,4003.060,1,gaierror: [Errno -5] No address associated with hostname
+loan_app,customer_app,8000,cross_business_app,proposed,false,4001.247,1,gaierror: [Errno -2] Name or service not known
+loan_app,credit_app,8000,cross_business_app,proposed,false,3956.385,1,gaierror: [Errno -2] Name or service not known
+loan_app,aml_app,8000,cross_business_app,proposed,false,3978.259,1,gaierror: [Errno -2] Name or service not known
+loan_app,approval_app,8000,cross_business_app,proposed,false,3973.709,1,gaierror: [Errno -2] Name or service not known
+credit_app,customer_app,8000,cross_business_app,proposed,false,4002.847,1,gaierror: [Errno -5] No address associated with hostname
+credit_app,loan_app,8000,cross_business_app,proposed,false,3973.516,1,gaierror: [Errno -2] Name or service not known
+credit_app,aml_app,8000,cross_business_app,proposed,false,3993.031,1,gaierror: [Errno -2] Name or service not known
+credit_app,approval_app,8000,cross_business_app,proposed,false,3965.858,1,gaierror: [Errno -2] Name or service not known
+aml_app,customer_app,8000,cross_business_app,proposed,false,3993.801,1,gaierror: [Errno -2] Name or service not known
+aml_app,loan_app,8000,cross_business_app,proposed,false,3968.515,1,gaierror: [Errno -2] Name or service not known
+aml_app,credit_app,8000,cross_business_app,proposed,false,3992.436,1,gaierror: [Errno -2] Name or service not known
+aml_app,approval_app,8000,cross_business_app,proposed,false,3980.431,1,gaierror: [Errno -2] Name or service not known
+approval_app,customer_app,8000,cross_business_app,proposed,false,3978.965,1,gaierror: [Errno -2] Name or service not known
+approval_app,loan_app,8000,cross_business_app,proposed,false,3977.226,1,gaierror: [Errno -2] Name or service not known
+approval_app,credit_app,8000,cross_business_app,proposed,false,3981.783,1,gaierror: [Errno -2] Name or service not known
+approval_app,aml_app,8000,cross_business_app,proposed,false,3963.220,1,gaierror: [Errno -2] Name or service not known

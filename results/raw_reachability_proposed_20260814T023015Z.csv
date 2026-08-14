@@ -1,0 +1,46 @@
+source_container,target_host,target_port,relationship,mode,reachable,elapsed_ms,returncode,error
+customer_app,customer_db,5432,own_db,proposed,true,2.171,0,
+customer_app,loan_db,5432,cross_business_db,proposed,false,2.684,1,gaierror: [Errno -3] Temporary failure in name resolution
+customer_app,credit_db,5432,cross_business_db,proposed,false,2.525,1,gaierror: [Errno -3] Temporary failure in name resolution
+customer_app,aml_db,5432,cross_business_db,proposed,false,2.075,1,gaierror: [Errno -3] Temporary failure in name resolution
+customer_app,approval_db,5432,cross_business_db,proposed,false,2.221,1,gaierror: [Errno -3] Temporary failure in name resolution
+loan_app,loan_db,5432,own_db,proposed,true,2.186,0,
+loan_app,customer_db,5432,cross_business_db,proposed,false,2.458,1,gaierror: [Errno -3] Temporary failure in name resolution
+loan_app,credit_db,5432,cross_business_db,proposed,false,2.413,1,gaierror: [Errno -3] Temporary failure in name resolution
+loan_app,aml_db,5432,cross_business_db,proposed,false,2.038,1,gaierror: [Errno -3] Temporary failure in name resolution
+loan_app,approval_db,5432,cross_business_db,proposed,false,2.183,1,gaierror: [Errno -3] Temporary failure in name resolution
+credit_app,credit_db,5432,own_db,proposed,true,2.377,0,
+credit_app,customer_db,5432,cross_business_db,proposed,false,2.154,1,gaierror: [Errno -3] Temporary failure in name resolution
+credit_app,loan_db,5432,cross_business_db,proposed,false,2.309,1,gaierror: [Errno -3] Temporary failure in name resolution
+credit_app,aml_db,5432,cross_business_db,proposed,false,2.314,1,gaierror: [Errno -3] Temporary failure in name resolution
+credit_app,approval_db,5432,cross_business_db,proposed,false,2.150,1,gaierror: [Errno -3] Temporary failure in name resolution
+aml_app,aml_db,5432,own_db,proposed,true,2.122,0,
+aml_app,customer_db,5432,cross_business_db,proposed,false,2.290,1,gaierror: [Errno -3] Temporary failure in name resolution
+aml_app,loan_db,5432,cross_business_db,proposed,false,2.293,1,gaierror: [Errno -3] Temporary failure in name resolution
+aml_app,credit_db,5432,cross_business_db,proposed,false,2.085,1,gaierror: [Errno -3] Temporary failure in name resolution
+aml_app,approval_db,5432,cross_business_db,proposed,false,2.073,1,gaierror: [Errno -3] Temporary failure in name resolution
+approval_app,approval_db,5432,own_db,proposed,true,2.208,0,
+approval_app,customer_db,5432,cross_business_db,proposed,false,2.476,1,gaierror: [Errno -3] Temporary failure in name resolution
+approval_app,loan_db,5432,cross_business_db,proposed,false,2.244,1,gaierror: [Errno -3] Temporary failure in name resolution
+approval_app,credit_db,5432,cross_business_db,proposed,false,2.097,1,gaierror: [Errno -3] Temporary failure in name resolution
+approval_app,aml_db,5432,cross_business_db,proposed,false,2.028,1,gaierror: [Errno -3] Temporary failure in name resolution
+customer_app,loan_app,8000,cross_business_app,proposed,false,2.271,1,gaierror: [Errno -3] Temporary failure in name resolution
+customer_app,credit_app,8000,cross_business_app,proposed,false,2.273,1,gaierror: [Errno -3] Temporary failure in name resolution
+customer_app,aml_app,8000,cross_business_app,proposed,false,2.313,1,gaierror: [Errno -3] Temporary failure in name resolution
+customer_app,approval_app,8000,cross_business_app,proposed,false,2.051,1,gaierror: [Errno -3] Temporary failure in name resolution
+loan_app,customer_app,8000,cross_business_app,proposed,false,2.621,1,gaierror: [Errno -3] Temporary failure in name resolution
+loan_app,credit_app,8000,cross_business_app,proposed,false,2.181,1,gaierror: [Errno -3] Temporary failure in name resolution
+loan_app,aml_app,8000,cross_business_app,proposed,false,2.623,1,gaierror: [Errno -3] Temporary failure in name resolution
+loan_app,approval_app,8000,cross_business_app,proposed,false,2.166,1,gaierror: [Errno -3] Temporary failure in name resolution
+credit_app,customer_app,8000,cross_business_app,proposed,false,2.214,1,gaierror: [Errno -3] Temporary failure in name resolution
+credit_app,loan_app,8000,cross_business_app,proposed,false,2.355,1,gaierror: [Errno -3] Temporary failure in name resolution
+credit_app,aml_app,8000,cross_business_app,proposed,false,2.296,1,gaierror: [Errno -3] Temporary failure in name resolution
+credit_app,approval_app,8000,cross_business_app,proposed,false,2.030,1,gaierror: [Errno -3] Temporary failure in name resolution
+aml_app,customer_app,8000,cross_business_app,proposed,false,2.321,1,gaierror: [Errno -3] Temporary failure in name resolution
+aml_app,loan_app,8000,cross_business_app,proposed,false,2.230,1,gaierror: [Errno -3] Temporary failure in name resolution
+aml_app,credit_app,8000,cross_business_app,proposed,false,2.116,1,gaierror: [Errno -3] Temporary failure in name resolution
+aml_app,approval_app,8000,cross_business_app,proposed,false,2.389,1,gaierror: [Errno -3] Temporary failure in name resolution
+approval_app,customer_app,8000,cross_business_app,proposed,false,2.385,1,gaierror: [Errno -3] Temporary failure in name resolution
+approval_app,loan_app,8000,cross_business_app,proposed,false,2.078,1,gaierror: [Errno -3] Temporary failure in name resolution
+approval_app,credit_app,8000,cross_business_app,proposed,false,2.172,1,gaierror: [Errno -3] Temporary failure in name resolution
+approval_app,aml_app,8000,cross_business_app,proposed,false,2.023,1,gaierror: [Errno -3] Temporary failure in name resolution

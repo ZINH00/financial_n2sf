@@ -1,0 +1,14 @@
+metric,baseline,proposed,relative_change
+authorized_flow_success_rate,1.0,1.0,0.0
+unauthorized_flow_block_rate,0.375,1.0,1.6666666666666667
+unauthorized_flow_block_rate_policy_scope,0.0,1.0,
+unauthorized_flow_block_rate_structural_scope,1.0,1.0,0.0
+cross_business_app_reachability_rate,1.0,0.0,-1.0
+cross_business_db_reachability_rate,1.0,0.0,-1.0
+blast_radius_mean,4.0,0.0,-1.0
+blast_radius_max,4.0,0.0,-1.0
+decision_latency_median_ms,1.2099309999911156,1.29508924919719,0.07038273191338977
+decision_latency_p95_ms,1.257611349990384,1.3487922239619365,0.07250322126327
+total_latency_median_ms,11.391004749981448,11.707107249549153,0.02775018591474296
+total_latency_p95_ms,11.703352600025596,12.120477000144092,0.035641445180211326
+audit_completeness_rate,1.0,1.0,0.0

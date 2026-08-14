@@ -1,0 +1,11 @@
+source_business,blast_radius,mode
+aml,4,baseline
+approval,4,baseline
+credit,4,baseline
+customer,4,baseline
+loan,4,baseline
+aml,0,proposed
+approval,0,proposed
+credit,0,proposed
+customer,0,proposed
+loan,0,proposed
