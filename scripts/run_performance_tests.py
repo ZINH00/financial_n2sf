@@ -5,7 +5,7 @@ import time
 
 import httpx
 
-from common import RESULTS, percentile, timestamp, write_csv
+from common import MODES, RESULTS, percentile, timestamp, write_csv
 
 # 논문 3.3절 정상 업무흐름 중 loan이 시작점인 4개 흐름을 모두 측정한다(승인자가
 # loan을 조회하는 역방향 흐름은 정책·기능 검증에서 이미 다루므로 성능측정은
@@ -52,7 +52,7 @@ def call_flow(client: httpx.Client, flow: dict, scenario_id: str, experiment_run
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Measure PEP/OPA overhead for the four loan-initiated business flows.")
-    parser.add_argument("--mode", choices=["baseline", "proposed"], required=True)
+    parser.add_argument("--mode", choices=list(MODES), required=True)
     parser.add_argument("--batches", type=int, default=30)
     parser.add_argument("--per-batch", type=int, default=200)
     parser.add_argument("--warmup", type=int, default=20)

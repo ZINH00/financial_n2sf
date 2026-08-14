@@ -12,6 +12,17 @@ ROOT = Path(__file__).resolve().parents[1]
 RESULTS = ROOT / "results"
 SCENARIOS = ROOT / "scenarios"
 
+# 2x2 ablation 설계의 두 축(정책 세분화 여부 x 네트워크 분리 여부)을 4개 실험
+# 모드에 매핑한다. baseline/proposed는 기존 2조건 비교와 동일하고, policy_only/
+# segmentation_only가 각 통제요소를 단독으로 분리해서 검증하는 중간 조건이다.
+MODE_AXES: dict[str, dict[str, str]] = {
+    "baseline": {"policy": "broad", "network": "flat"},
+    "policy_only": {"policy": "finegrained", "network": "flat"},
+    "segmentation_only": {"policy": "broad", "network": "segmented"},
+    "proposed": {"policy": "finegrained", "network": "segmented"},
+}
+MODES: tuple[str, ...] = ("baseline", "policy_only", "segmentation_only", "proposed")
+
 
 def timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")

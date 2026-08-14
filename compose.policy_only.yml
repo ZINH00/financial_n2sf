@@ -1,0 +1,385 @@
+name: fininst-a-policy-only
+services:
+  customer_db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+    volumes:
+    - customer_data:/var/lib/postgresql/data
+    - ./db/init/00_schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
+    networks:
+    - flat_s
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U n2sf -d n2sf
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+  customer_app:
+    build:
+      context: ./services/app
+    environment:
+      SERVICE_NAME: customer
+      BUSINESS_ROLE: customer
+      ZONE: S
+      DB_HOST: customer_db
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+      PEP_URL: http://pep:8080
+      WORKLOAD_SECRET: wl-customer-8f2a1c
+    networks:
+    - flat_s
+    ports:
+    - 127.0.0.1:18001:8000
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen("http://localhost:8000/health", timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+    depends_on:
+      customer_db:
+        condition: service_healthy
+      pep:
+        condition: service_healthy
+    restart: unless-stopped
+  loan_db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+    volumes:
+    - loan_data:/var/lib/postgresql/data
+    - ./db/init/00_schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
+    networks:
+    - flat_s
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U n2sf -d n2sf
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+  loan_app:
+    build:
+      context: ./services/app
+    environment:
+      SERVICE_NAME: loan
+      BUSINESS_ROLE: loan
+      ZONE: S
+      DB_HOST: loan_db
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+      PEP_URL: http://pep:8080
+      WORKLOAD_SECRET: wl-loan-3d9e47
+    networks:
+    - flat_s
+    ports:
+    - 127.0.0.1:18002:8000
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen("http://localhost:8000/health", timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+    depends_on:
+      loan_db:
+        condition: service_healthy
+      pep:
+        condition: service_healthy
+    restart: unless-stopped
+  credit_db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+    volumes:
+    - credit_data:/var/lib/postgresql/data
+    - ./db/init/00_schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
+    networks:
+    - flat_s
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U n2sf -d n2sf
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+  credit_app:
+    build:
+      context: ./services/app
+    environment:
+      SERVICE_NAME: credit
+      BUSINESS_ROLE: credit
+      ZONE: S
+      DB_HOST: credit_db
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+      PEP_URL: http://pep:8080
+      WORKLOAD_SECRET: wl-credit-71b0aa
+    networks:
+    - flat_s
+    ports:
+    - 127.0.0.1:18003:8000
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen("http://localhost:8000/health", timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+    depends_on:
+      credit_db:
+        condition: service_healthy
+      pep:
+        condition: service_healthy
+    restart: unless-stopped
+  aml_db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+    volumes:
+    - aml_data:/var/lib/postgresql/data
+    - ./db/init/00_schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
+    networks:
+    - flat_s
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U n2sf -d n2sf
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+  aml_app:
+    build:
+      context: ./services/app
+    environment:
+      SERVICE_NAME: aml
+      BUSINESS_ROLE: aml
+      ZONE: S
+      DB_HOST: aml_db
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+      PEP_URL: http://pep:8080
+      WORKLOAD_SECRET: wl-aml-c4517f
+    networks:
+    - flat_s
+    ports:
+    - 127.0.0.1:18004:8000
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen("http://localhost:8000/health", timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+    depends_on:
+      aml_db:
+        condition: service_healthy
+      pep:
+        condition: service_healthy
+    restart: unless-stopped
+  approval_db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+    volumes:
+    - approval_data:/var/lib/postgresql/data
+    - ./db/init/00_schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
+    networks:
+    - flat_s
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U n2sf -d n2sf
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+  approval_app:
+    build:
+      context: ./services/app
+    environment:
+      SERVICE_NAME: approval
+      BUSINESS_ROLE: approval
+      ZONE: S
+      DB_HOST: approval_db
+      POSTGRES_DB: n2sf
+      POSTGRES_USER: n2sf
+      POSTGRES_PASSWORD: n2sf_lab_pw
+      PEP_URL: http://pep:8080
+      WORKLOAD_SECRET: wl-approval-902bd3
+    networks:
+    - flat_s
+    ports:
+    - 127.0.0.1:18005:8000
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen("http://localhost:8000/health", timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+    depends_on:
+      approval_db:
+        condition: service_healthy
+      pep:
+        condition: service_healthy
+    restart: unless-stopped
+  opa:
+    # openpolicyagent/opa:*-static는 scratch 기반이라 셸/curl/wget이 전혀 없어
+    # Docker HEALTHCHECK(CMD-SHELL은 물론 CMD 바이너리 호출도)를 붙이기 어렵다.
+    # 대신 PEP/CDS가 자체적으로 OPA 호출을 재시도·재조회하도록 구현했다
+    # (services/pep/main.py의 refresh_policy_version, opa_transport_error 처리).
+    image: openpolicyagent/opa:1.4.2-static
+    command:
+    - run
+    - --server
+    - --addr=0.0.0.0:8181
+    - /policy/access.rego
+    - /policy/cds.rego
+    - /policy/data.json
+    volumes:
+    - ./policies/proposed.rego:/policy/access.rego:ro
+    - ./policies/cds.rego:/policy/cds.rego:ro
+    - ./policies/data.json:/policy/data.json:ro
+    networks:
+    - control
+    ports:
+    - 127.0.0.1:18181:8181
+    restart: unless-stopped
+  pep:
+    build:
+      context: ./services/pep
+    environment:
+      OPA_URL: http://opa:8181/v1/data/financial/access/decision
+      AUDIT_FILE: /logs/pep_audit_policy_only.jsonl
+      WORKLOAD_SECRETS: '{"customer":"wl-customer-8f2a1c","loan":"wl-loan-3d9e47","credit":"wl-credit-71b0aa","aml":"wl-aml-c4517f","approval":"wl-approval-902bd3"}'
+    volumes:
+    - ./results:/logs
+    networks:
+    - flat_s
+    - control
+    ports:
+    - 127.0.0.1:18080:8080
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen("http://localhost:8080/health", timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+    depends_on:
+      opa:
+        condition: service_started
+    restart: unless-stopped
+  transfer_cds:
+    build:
+      context: ./services/cds
+    environment:
+      CDS_OPA_URL: http://opa:8181/v1/data/financial/cds/decision
+      PUBLIC_URL: http://public_app:8000
+      AI_URL: http://external_ai:8000
+      AUDIT_FILE: /logs/cds_audit_policy_only.jsonl
+    volumes:
+    - ./results:/logs
+    networks:
+    - flat_s
+    - control
+    - o_zone
+    ports:
+    - 127.0.0.1:18090:8090
+    depends_on:
+      opa:
+        condition: service_started
+      public_app:
+        condition: service_healthy
+      external_ai:
+        condition: service_healthy
+    restart: unless-stopped
+  public_app:
+    build:
+      context: ./services/external
+    environment:
+      SERVICE_NAME: public_service
+    networks:
+    - o_zone
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen("http://localhost:8000/health", timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+    restart: unless-stopped
+  external_ai:
+    build:
+      context: ./services/external
+    environment:
+      SERVICE_NAME: external_ai_stub
+    networks:
+    - o_zone
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen("http://localhost:8000/health", timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+    restart: unless-stopped
+networks:
+  flat_s:
+    driver: bridge
+  control:
+    driver: bridge
+  o_zone:
+    driver: bridge
+volumes:
+  customer_data: {}
+  loan_data: {}
+  credit_data: {}
+  aml_data: {}
+  approval_data: {}

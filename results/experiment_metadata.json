@@ -1,5 +1,5 @@
 {
-  "collected_at_utc": "2026-08-14T04:32:08.401170+00:00",
+  "collected_at_utc": "2026-08-14T15:53:24.904133+00:00",
   "host": {
     "os": "Windows-11-10.0.26200-SP0",
     "machine": "AMD64",
@@ -17,8 +17,8 @@
     "postgres_image_digest": "postgres@sha256:d4bb0a8c1b7bb2e29f976d099e7bfb9a5d8858cffe9e46b35cd302cd1f1f8168"
   },
   "repository": {
-    "git_commit_sha": "1174909c4f6c57e60d10ce7a56684ff78201178c",
-    "git_branch": "main",
+    "git_commit_sha": "c7a9d2c54b6848c5107236427f1c5caccee36542",
+    "git_branch": "feature/ablation-2x2",
     "git_dirty": true
   },
   "policy_hashes_sha256": {
@@ -31,9 +31,9 @@
     "data.json": "29c303a478d4e0c15fb95b4818955eab4e404d984006cd7a792f3ef18b03e28e"
   },
   "scenario_hashes_sha256": {
-    "authorized_flows.csv": "ba611695cc7a93a3147c002b1d44faed8698e81617885e4b2cbe5eb877eb8820",
-    "cds_flows.csv": "4ea65cbbf661dedb45eec2cb012ad522f6924d925e2429e70f4b2b38af6cd5fb",
+    "authorized_flows.csv": "a3d86128cc38cffd5d5bd3faf486de9cdb259d80348a100808c496a9e92e91b8",
+    "cds_flows.csv": "17a8dcf1651ea74b1b76666f4cec0d562a260f6ef751a18f552b01f8595daa78",
     "reachability_matrix.csv": "7f18d1a574b3d55bff873bef7027d0b3b5563ca2b8a830bef4aaabff1c6aa6b3",
-    "unauthorized_flows.csv": "9e2123899706aa09c4a9930efdc1429ca47132bbece3d187acb9f09e226d0758"
+    "unauthorized_flows.csv": "6f081f30ab6035c0369bd3d46b43bfdc1fee5ad5fa03ac6e7dc0269504466a59"
   }
 }

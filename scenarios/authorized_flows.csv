@@ -1,4 +1,4 @@
-scenario_id,entry_point,source_service,source_business,destination,method,path,action,role,device_trust,purpose,data_grade,claimed_source_service,claimed_source_business,signature_mode,violation_type,expected_baseline,expected_proposed
+scenario_id,entry_point,source_service,source_business,destination,method,path,action,role,device_trust,purpose,data_grade,claimed_source_service,claimed_source_business,signature_mode,violation_type,expected_broad_policy,expected_finegrained_policy
 A01,call,loan,loan,customer,GET,/customer-profile/CASE-0001,read_customer_profile,loan_reviewer,trusted,loan_screening,S,,,,,allow,allow
 A02,call,loan,loan,credit,POST,/credit-assessment,request_credit_assessment,loan_reviewer,trusted,loan_screening,S,,,,,allow,allow
 A03,call,loan,loan,aml,POST,/aml-screening,request_aml_screening,loan_reviewer,trusted,loan_screening,S,,,,,allow,allow

@@ -5,14 +5,14 @@ import re
 import subprocess
 from pathlib import Path
 
-from common import RESULTS, ROOT, read_csv, timestamp, write_csv
+from common import MODES, RESULTS, ROOT, read_csv, timestamp, write_csv
 
 REACHABLE_RE = re.compile(r"reachable=(true|false)\s+elapsed_ms=([0-9.]+)\s+error=(.*)")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Measure direct service (app) and database reachability from each business service.")
-    parser.add_argument("--mode", choices=["baseline", "proposed"], required=True)
+    parser.add_argument("--mode", choices=list(MODES), required=True)
     args = parser.parse_args()
     compose = ROOT / f"compose.{args.mode}.yml"
     rows = []

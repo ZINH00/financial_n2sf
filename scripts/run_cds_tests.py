@@ -5,22 +5,23 @@ import time
 
 import httpx
 
-from common import RESULTS, as_bool, parse_json, read_csv, timestamp, write_csv
+from common import MODE_AXES, MODES, RESULTS, as_bool, parse_json, read_csv, timestamp, write_csv
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run S/O Transfer CDS validation scenarios.")
-    parser.add_argument("--mode", choices=["baseline", "proposed"], required=True)
+    parser.add_argument("--mode", choices=list(MODES), required=True)
     parser.add_argument("--base-url", default="http://127.0.0.1:18090")
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--experiment-run-id", default=None)
     args = parser.parse_args()
     experiment_run_id = args.experiment_run_id or f"{args.mode}-{timestamp()}"
+    policy_axis = MODE_AXES[args.mode]["policy"]
 
     rows: list[dict] = []
     with httpx.Client(timeout=10.0) as client:
         for scenario in read_csv("cds_flows.csv"):
-            expected = scenario[f"expected_{args.mode}"]
+            expected = scenario[f"expected_{policy_axis}_policy"]
             payload = {
                 "destination": scenario["destination"],
                 "data_grade": scenario["data_grade"],

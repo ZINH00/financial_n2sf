@@ -1,23 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 MODE="${1:-}"
-if [[ "$MODE" != "baseline" && "$MODE" != "proposed" ]]; then
-  echo "usage: $0 baseline|proposed" >&2
-  echo "  (run 'docker compose -f compose.\$MODE.yml up -d --build' before this script)" >&2
-  exit 2
-fi
+case "$MODE" in
+  baseline|policy_only|segmentation_only|proposed) ;;
+  *)
+    echo "usage: $0 baseline|policy_only|segmentation_only|proposed" >&2
+    echo "  (run 'docker compose -f compose.\$MODE.yml up -d --build --wait' before this script)" >&2
+    exit 2
+    ;;
+esac
 
-# baseline.rego와 proposed.rego는 둘 다 package financial.access에서 서로 다른
-# default decision을 정의하므로, policies/ 디렉터리 전체를 한 번에 opa test하면
-# "multiple default rules" 컴파일 오류가 난다(baseline_cds.rego/cds.rego도 동일).
-# 따라서 모드별로 실제 그 모드가 사용하는 정책 파일만 명시해서 검사한다.
-if [[ "$MODE" == "proposed" ]]; then
+# 정책 축(policy axis)이 finegrained인 모드(policy_only/proposed)만 proposed.rego/
+# cds.rego를 사용한다. baseline.rego와 proposed.rego는 둘 다 package financial.access
+# 에서 서로 다른 default decision을 정의하므로, policies/ 디렉터리 전체를 한 번에
+# opa test하면 "multiple default rules" 컴파일 오류가 난다(baseline_cds.rego/cds.rego도
+# 동일). 따라서 모드별로 실제 그 모드가 사용하는 정책 파일만 명시해서 검사한다.
+if [[ "$MODE" == "policy_only" || "$MODE" == "proposed" ]]; then
   echo "[1/6] Validating policy unit tests (opa test, proposed access + cds policy)"
   docker run --rm -v "$(pwd)/policies:/policies" openpolicyagent/opa:1.4.2-static \
     test /policies/proposed.rego /policies/proposed_test.rego \
          /policies/cds.rego /policies/cds_test.rego /policies/data.json
 else
-  echo "[1/6] Skipping opa test for baseline (no baseline-specific unit tests exist; proposed_test.rego/cds_test.rego target the proposed policies)"
+  echo "[1/6] Skipping opa test for ${MODE} (broad policy axis: no baseline-specific unit tests exist; proposed_test.rego/cds_test.rego target the fine-grained policies)"
 fi
 
 echo "[2/6] Collecting environment metadata"

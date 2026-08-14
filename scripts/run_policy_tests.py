@@ -6,7 +6,7 @@ import time
 
 import httpx
 
-from common import RESULTS, read_csv, timestamp, write_csv
+from common import MODE_AXES, MODES, RESULTS, read_csv, timestamp, write_csv
 
 # 논문 3.3절의 신원 검증 구조를 실험에도 반영하기 위해, entry_point="call" 시나리오는
 # 호스트에서 PEP를 직접 두드리지 않고 실제 출발 업무 컨테이너의 /call을 거친다.
@@ -85,7 +85,7 @@ def call_pep_directly(client: httpx.Client, pep_url: str, scenario: dict, experi
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run approved and unauthorized business-flow policy tests.")
-    parser.add_argument("--mode", choices=["baseline", "proposed"], required=True)
+    parser.add_argument("--mode", choices=list(MODES), required=True)
     parser.add_argument("--pep-url", default="http://127.0.0.1:18080")
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--experiment-run-id", default=None)
@@ -94,6 +94,7 @@ def main() -> int:
         parser.error("--repeat must be >= 1")
     experiment_run_id = args.experiment_run_id or f"{args.mode}-{timestamp()}"
 
+    policy_axis = MODE_AXES[args.mode]["policy"]
     scenarios = read_csv("authorized_flows.csv") + read_csv("unauthorized_flows.csv")
     rows: list[dict] = []
     with httpx.Client(timeout=10.0) as client:
@@ -107,7 +108,7 @@ def main() -> int:
                 else:
                     status_code, error, latency_ms = call_pep_directly(client, args.pep_url, scenario, experiment_run_id, attempt_id)
                 actual = "allow" if 200 <= status_code < 300 else "deny"
-                expected = scenario[f"expected_{args.mode}"]
+                expected = scenario[f"expected_{policy_axis}_policy"]
                 rows.append({
                     **scenario,
                     "mode": args.mode,

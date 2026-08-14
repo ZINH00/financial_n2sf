@@ -1,4 +1,4 @@
-scenario_id,destination,data_grade,approved,purpose,role,device_trust,source_object_id,content_json,expected_baseline,expected_proposed
+scenario_id,destination,data_grade,approved,purpose,role,device_trust,source_object_id,content_json,expected_broad_policy,expected_finegrained_policy
 C01,public,O,true,public_disclosure,publisher,trusted,OBJ-O-001,"{""statistic"": ""aggregate delinquency rate"", ""value"": 3.2}",allow,allow
 C02,external_ai,O,true,approved_ai_use,ai_user,trusted,OBJ-O-002,"{""task"": ""summarize approved public report""}",allow,allow
 C03,public,S,true,public_disclosure,publisher,trusted,OBJ-S-001,"{""internal_review"": ""confidential supervisory note""}",allow,deny
