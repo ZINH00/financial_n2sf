@@ -23,12 +23,17 @@ MODE_AXES: dict[str, dict[str, str]] = {
 }
 MODES: tuple[str, ...] = ("baseline", "policy_only", "segmentation_only", "proposed")
 
-# PEP가 실제 Rego 판단에 도달하지 못했음을 뜻하는 사유들. HTTP status만으로는
+# PEP/CDS가 실제 Rego 판단에 도달하지 못했음을 뜻하는 사유들. HTTP status만으로는
 # 정책적 거부(deny)와 PEP/PDP/목적지 연결 실패가 구분되지 않으므로, 그래프 간선
 # 여부나 지표 산출 시 이 사유에 해당하는 요청은 실행 오류로 취급해 제외한다
 # (신원 미검증 계열 사유인 unregistered_workload/workload_signature_invalid는
-# 반대로 그 자체가 검증 대상인 정책적 판단이므로 제외 대상이 아니다).
-STRUCTURAL_ERROR_REASONS = {"opa_transport_error", "opa_error", "upstream_transport_error", "unknown_destination"}
+# 반대로 그 자체가 검증 대상인 정책적 판단이므로 제외 대상이 아니다). CDS
+# (services/cds/main.py)는 동일한 성격의 오류를 cds_ 접두사로 기록하므로 함께
+# 포함한다 — 빠지면 CDS의 OPA/업스트림 연결 실패가 정상적인 정책 거부로 오분류된다.
+STRUCTURAL_ERROR_REASONS = {
+    "opa_transport_error", "opa_error", "upstream_transport_error", "unknown_destination",
+    "cds_opa_transport_error", "cds_opa_error", "cds_upstream_transport_error",
+}
 
 
 def timestamp() -> str:

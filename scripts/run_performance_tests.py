@@ -90,10 +90,22 @@ def main() -> int:
     write_csv(output, list(rows[0].keys()), rows)
     print(output)
     print(f"experiment_run_id={experiment_run_id}")
+    failed = []
     for flow in FLOWS:
-        successful = [float(r["latency_ms"]) for r in rows if r["flow"] == flow["name"] and 200 <= int(r["status_code"]) < 300]
-        total = [r for r in rows if r["flow"] == flow["name"]]
-        print(f"{flow['name']}: successful={len(successful)}/{len(total)} p50_ms={percentile(successful,0.50):.3f} p95_ms={percentile(successful,0.95):.3f}")
+        flow_rows = [r for r in rows if r["flow"] == flow["name"]]
+        successful = [float(r["latency_ms"]) for r in flow_rows if 200 <= int(r["status_code"]) < 300 and not r["error"]]
+        failed.extend(r for r in flow_rows if not (200 <= int(r["status_code"]) < 300) or r["error"])
+        print(f"{flow['name']}: successful={len(successful)}/{len(flow_rows)} p50_ms={percentile(successful,0.50):.3f} p95_ms={percentile(successful,0.95):.3f}")
+
+    # 이 라운드는 정상 업무흐름의 지연시간을 측정하는 것이므로, 요청이 하나라도
+    # 실패하면(비2xx 또는 전송 오류) 그 라운드는 정상적인 성능측정이 아니다.
+    # 실패를 조용히 제외하고 나머지만으로 median을 계산하면 실패가 성능을
+    # 좋아 보이게 만드는 방향으로 결과를 왜곡할 수 있다.
+    if failed:
+        print(f"PERFORMANCE RUN FAILED: {len(failed)}/{len(rows)} request(s) failed in round {args.round_id} (mode={args.mode})")
+        for r in failed[:20]:
+            print(f"  flow={r['flow']} batch={r['batch_id']} request={r['request_id']} status={r['status_code']} error={r['error']}")
+        return 1
     return 0
 
 

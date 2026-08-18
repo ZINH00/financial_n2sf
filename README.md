@@ -331,9 +331,10 @@ python scripts/run_cds_tests.py --mode proposed --repeat 1 --fail-on-mismatch
 
 ### 8.3 업무 엔드포인트 — `scenarios/business_endpoints.csv`
 
-5개 업무가 각각 노출하는 `(method, path)`를 담은 파일이다(§3의 행위-엔드포인트 매핑과 동일한
-내용을 CSV로 외부화). `run_policy_space.py`가 목적업무별로 어떤 행위를 요청해야 하는지 여기서
-조회한다.
+5개 업무가 각각 노출하는 `(method, path, action)`을 담은 파일이다(§3의 행위-엔드포인트 매핑과
+동일한 내용을 CSV로 외부화). `action`은 `read_customer_profile`처럼 3.3절의 canonical action
+값이며(요청 URL이 아니라 이 값이 raw 정책공간 결과의 `action` 컬럼에 그대로 기록된다),
+`run_policy_space.py`가 목적업무별로 어떤 행위를 요청해야 하는지 여기서 조회한다.
 
 ### 8.4 정책공간 전수탐색 — `scripts/run_policy_space.py`
 
@@ -402,7 +403,7 @@ python scripts/run_experiment.py --rounds 12 --batches 3 --per-batch 200 --warmu
 |---|---|
 | `{network,policy,effective}_graph_<mode>.graphml` | 모드별 Network/Policy/Effective 통신 그래프(NetworkX GraphML) |
 | `{network,policy,effective}_edges_<mode>.csv` | 위 그래프의 간선 목록 |
-| `graph_metrics.csv` | 모드별 AVOD/TINR 절대값 + Baseline 대비 상대적 변화(`relative_change_vs_baseline`), 그리고 축별 평균(다른 축은 평균으로 소거)을 더한 `axis_group` 행(`mode` 칸이 빈 행 — "정책축만 반응/네트워크축만 반응" 패턴을 표에서 바로 확인 가능) |
+| `graph_metrics.csv` | 모드별 AVOD/TINR 절대값 + Baseline 대비 감소율(`reduction_vs_baseline`, 양수=Baseline보다 감소), 그리고 축별 평균(다른 축은 평균으로 소거)을 더한 `axis_group` 행(`mode` 칸이 빈 행 — "정책축만 반응/네트워크축만 반응" 패턴을 표에서 바로 확인 가능) |
 | `node_metrics.csv` | 자산×모드별 out-degree, 전이적으로 도달 가능한 노드 수 |
 | `graph_avod.png`, `graph_tinr.png` | AVOD/TINR 막대그래프(4개 모드) |
 | `raw_network_edges_<mode>_<timestamp>.csv` | 90쌍 도달성 전수검사 원본(§8.5) |

@@ -63,9 +63,17 @@ def probe_once(image: str, source_container_id: str, targets: list[tuple[str, st
         label = f"{host}:{port}"
         rec = by_label.get(label)
         if rec is None:
-            results[asset_id] = {"reachable": False, "elapsed_ms": 0.0, "error": f"no probe output (rc={proc.returncode}) stderr={proc.stderr.strip()}"}
-        else:
-            results[asset_id] = {"reachable": bool(rec["reachable"]), "elapsed_ms": float(rec["elapsed_ms"]), "error": rec.get("error", "")}
+            # probe.py가 이 타겟에 대한 JSON 결과 줄을 아예 내지 않은 경우다(예:
+            # 컨테이너 자체가 뜨지 못함, 중간에 죽음, 예상 밖 stdout). 이걸
+            # reachable=False로 채워버리면 "probe 실행 자체가 실패"와 "실제로
+            # 네트워크가 막혀 있음"을 구분할 수 없게 되고, 3회 모두 같은 방식으로
+            # 실패하면 stable=true로 통과해 버린다. 실행 오류는 네트워크 결과로
+            # 둔갑시키지 않고 즉시 실패시킨다.
+            raise RuntimeError(
+                f"probe execution failed for target={label} (rc={proc.returncode}): "
+                f"stdout={proc.stdout.strip()!r} stderr={proc.stderr.strip()!r}"
+            )
+        results[asset_id] = {"reachable": bool(rec["reachable"]), "elapsed_ms": float(rec["elapsed_ms"]), "error": rec.get("error", "")}
     return results
 
 

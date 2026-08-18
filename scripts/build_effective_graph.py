@@ -64,11 +64,18 @@ def build_graph(nodes: list[dict], edges: list[tuple[str, str]]) -> nx.DiGraph:
 
 def write_graph(graph: nx.DiGraph, results: Path, name: str, mode: str) -> None:
     nx.write_graphml(graph, results / f"{name}_graph_{mode}.graphml")
-    edge_rows = [{"source": u, "target": v} for u, v in graph.edges()]
-    if edge_rows:
-        write_csv(results / f"{name}_edges_{mode}.csv", ["source", "target"], edge_rows)
-    else:
-        write_csv(results / f"{name}_edges_{mode}.csv", ["source", "target"], [])
+    # network_graph/policy_graph 간선에는 direct_tcp/policy_mediated 속성이 없고
+    # effective_graph 간선에만 있다 — 존재하는 속성 키만 동적으로 컬럼에 반영해서
+    # 4.2 분석 시 이 edge가 직접 TCP 때문인지 정책 허용 때문인지(또는 둘 다인지)
+    # effective_edges_<mode>.csv만 보고도 바로 추적할 수 있게 한다.
+    attr_keys: list[str] = []
+    for _, _, data in graph.edges(data=True):
+        for key in data:
+            if key not in attr_keys:
+                attr_keys.append(key)
+    fieldnames = ["source", "target", *attr_keys]
+    edge_rows = [{"source": u, "target": v, **data} for u, v, data in graph.edges(data=True)]
+    write_csv(results / f"{name}_edges_{mode}.csv", fieldnames, edge_rows)
 
 
 def main() -> int:

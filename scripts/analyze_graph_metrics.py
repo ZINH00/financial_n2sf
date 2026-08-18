@@ -113,16 +113,19 @@ def main() -> int:
         })
     summary_df = {(r["metric"], r["mode"]): r["value"] for r in summary_rows}
 
-    def relative_change(metric: str, mode: str) -> float:
+    def reduction_vs_baseline(metric: str, mode: str) -> float:
+        """Baseline 대비 감소율. 양수= Baseline보다 줄어듦(개선), 음수 = 늘어남.
+        Table 5를 "Reduction"으로 서술하기 위해 (baseline-value)/baseline 부호를
+        쓴다 — AVOD가 9->3으로 줄면 +66.7%가 된다."""
         if mode == "baseline":
             return float("nan")
         base = summary_df[(metric, "baseline")]
         if not base:
             return float("nan")
-        return (summary_df[(metric, mode)] - base) / base
+        return (base - summary_df[(metric, mode)]) / base
 
     for row in summary_rows:
-        row["relative_change_vs_baseline"] = relative_change(row["metric"], row["mode"])
+        row["reduction_vs_baseline"] = reduction_vs_baseline(row["metric"], row["mode"])
 
     # ---- 축별 평균(다른 축은 평균으로 소거) 행: 2x2 ablation에서 검증된 패턴 재사용 ----
     axis_rows = []
@@ -139,12 +142,12 @@ def main() -> int:
                     "value": statistics.mean(vals) if vals else float("nan"),
                     "node_count": "",
                     "effective_edge_count": "",
-                    "relative_change_vs_baseline": float("nan"),
+                    "reduction_vs_baseline": float("nan"),
                     "axis_group": f"{axis_key}_axis={axis_value} (mean over {','.join(modes_in_group)})",
                 })
 
     all_rows = summary_rows + axis_rows
-    fieldnames = ["metric", "mode", "policy_axis", "network_axis", "value", "node_count", "effective_edge_count", "relative_change_vs_baseline", "axis_group"]
+    fieldnames = ["metric", "mode", "policy_axis", "network_axis", "value", "node_count", "effective_edge_count", "reduction_vs_baseline", "axis_group"]
     write_csv(results / "graph_metrics.csv", fieldnames, all_rows)
 
     # ---- node_metrics.csv ----
