@@ -5,7 +5,7 @@ import time
 
 import httpx
 
-from common import MODE_AXES, MODES, RESULTS, as_bool, parse_json, read_csv, timestamp, write_csv
+from common import MODE_AXES, MODES, RESULTS, as_bool, join_audit_decision, parse_json, read_csv, read_jsonl, timestamp, write_csv
 
 
 def main() -> int:
@@ -14,6 +14,7 @@ def main() -> int:
     parser.add_argument("--base-url", default="http://127.0.0.1:18090")
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--experiment-run-id", default=None)
+    parser.add_argument("--fail-on-mismatch", action="store_true", help="사전검증(preflight) 모드: 기대값과 다르거나 실행 오류인 요청이 하나라도 있으면 exit 1")
     args = parser.parse_args()
     experiment_run_id = args.experiment_run_id or f"{args.mode}-{timestamp()}"
     policy_axis = MODE_AXES[args.mode]["policy"]
@@ -67,6 +68,17 @@ def main() -> int:
     output = RESULTS / f"raw_cds_{args.mode}_{timestamp()}.csv"
     write_csv(output, list(rows[0].keys()) if rows else [], rows)
     print(output)
+
+    if args.fail_on_mismatch:
+        audit_rows = read_jsonl(RESULTS / f"cds_audit_{args.mode}.jsonl")
+        joined = join_audit_decision(rows, audit_rows, id_field="attempt_id")
+        problems = [r for r in joined if r["is_execution_error"] == "true" or r["matches_expected"] != "true"]
+        if problems:
+            print(f"PREFLIGHT FAILED: {len(problems)}/{len(joined)} request(s) mismatched or hit an execution error:")
+            for r in problems[:20]:
+                print(f"  {r['scenario_id']} attempt={r['attempt_id']} expected={r['expected']} actual={r['actual']} is_execution_error={r['is_execution_error']} audit_reason={r['audit_reason']}")
+            return 1
+        print(f"PREFLIGHT OK: {len(joined)}/{len(joined)} requests matched expectations with no execution errors")
     return 0
 
 

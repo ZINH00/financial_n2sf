@@ -23,6 +23,13 @@ MODE_AXES: dict[str, dict[str, str]] = {
 }
 MODES: tuple[str, ...] = ("baseline", "policy_only", "segmentation_only", "proposed")
 
+# PEP가 실제 Rego 판단에 도달하지 못했음을 뜻하는 사유들. HTTP status만으로는
+# 정책적 거부(deny)와 PEP/PDP/목적지 연결 실패가 구분되지 않으므로, 그래프 간선
+# 여부나 지표 산출 시 이 사유에 해당하는 요청은 실행 오류로 취급해 제외한다
+# (신원 미검증 계열 사유인 unregistered_workload/workload_signature_invalid는
+# 반대로 그 자체가 검증 대상인 정책적 판단이므로 제외 대상이 아니다).
+STRUCTURAL_ERROR_REASONS = {"opa_transport_error", "opa_error", "upstream_transport_error", "unknown_destination"}
+
 
 def timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -73,6 +80,28 @@ def to_bool_series(series):
     return series.astype(str).str.strip().str.lower() == "true"
 
 
+def join_audit_decision(rows: list[dict], audit_rows: list[dict], id_field: str = "attempt_id") -> list[dict]:
+    """요청 CSV 행을 PEP/CDS 감사로그와 (id_field, experiment_run_id)로 1:1 조인해
+    실제 정책 판단(decision/reason)을 붙인다. HTTP status는 정책적 거부와
+    PEP<->OPA/목적지 연결 실패를 구분하지 못하므로(예: opa_transport_error도
+    비2xx), 그래프 간선 여부나 지표는 이 함수가 붙인 audit_decision을 근거로
+    판단해야 한다. 감사로그에서 매칭되는 기록이 아예 없으면(요청이 PEP에 도달
+    못함) 보수적으로 실행 오류로 취급한다."""
+    index: dict[tuple[str, str], dict] = {}
+    for row in audit_rows:
+        key = (str(row.get("scenario_id", "")), str(row.get("experiment_run_id", "")))
+        index[key] = row
+    out = []
+    for row in rows:
+        key = (str(row.get(id_field, "")), str(row.get("experiment_run_id", "")))
+        rec = index.get(key)
+        reason = rec.get("reason") if rec else None
+        decision = rec.get("decision") if rec else None
+        is_execution_error = reason is None or reason in STRUCTURAL_ERROR_REASONS
+        out.append({**row, "audit_decision": decision or "", "audit_reason": reason or "", "is_execution_error": str(is_execution_error).lower()})
+    return out
+
+
 def parse_json(value: str) -> dict:
     parsed = json.loads(value)
     if not isinstance(parsed, dict):
@@ -101,8 +130,9 @@ def iqr(values: list[float]) -> float:
 def bootstrap_ci(values: list[float], n_boot: int = 2000, alpha: float = 0.05, seed: int = 7) -> tuple[float, float]:
     """중앙값에 대한 백분위수 부트스트랩 95% 신뢰구간.
 
-    반복 측정을 독립 표본으로 취급하기보다, 배치별 요약값(예: 배치 median) 목록을
-    입력으로 받아 그 목록을 리샘플링하는 용도로 사용한다.
+    반복 측정을 독립 표본으로 취급하기보다, 독립적으로 재기동된 라운드별 대표값
+    (예: 라운드 내 4개 업무흐름의 median) 목록을 입력으로 받아 그 목록을
+    리샘플링하는 용도로 사용한다.
     """
     if not values:
         return (float("nan"), float("nan"))

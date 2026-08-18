@@ -1,0 +1,6 @@
+destination,method,path
+customer,GET,/customer-profile/CASE-0001
+credit,POST,/credit-assessment
+aml,POST,/aml-screening
+approval,POST,/approval-requests
+loan,GET,/loan-review/CASE-0001

@@ -13,11 +13,11 @@ N2SF 시스템·업무별 모델**을 정답(ground truth)으로 두고, 그 위
 2. [실험 환경 구성](#2-실험-환경-구성)
 3. [정책 모델과 5튜플 권한 테이블](#3-정책-모델과-5튜플-권한-테이블)
 4. [HMAC 워크로드 신원 검증](#4-hmac-워크로드-신원-검증)
-5. [비교 환경: 2×2 ablation 설계](#5-비교-환경-2x2-ablation-설계)
+5. [비교 환경: 2x2 ablation 설계](#5-비교-환경-2x2-ablation-설계)
 6. [사전 준비](#6-사전-준비)
 7. [실험 실행](#7-실험-실행)
-8. [시나리오 구성](#8-시나리오-구성)
-9. [성능 측정 구조와 배치 설계](#9-성능-측정-구조와-배치-설계)
+8. [시나리오 및 자산 구성](#8-시나리오-및-자산-구성)
+9. [성능 측정 구조와 라운드 설계](#9-성능-측정-구조와-라운드-설계)
 10. [분석 및 산출물](#10-분석-및-산출물)
 11. [평가 지표 정의](#11-평가-지표-정의)
 12. [통계 처리 원칙](#12-통계-처리-원칙)
@@ -43,11 +43,18 @@ NSDI 2025의 ZTS(Zero Trust Segmentation)가 제안한 **통신 그래프 기반
 
 **실험 설계는 baseline/proposed 2조건 비교가 아니라 2×2 ablation이다.** 통제요소가 "①업무별
 네트워크 분리"와 "②역할 기반 정책 세분화" 두 가지인데, 2조건 비교만으로는 두 요소가 동시에
-바뀌므로 결과가 "스위치 하나로 전부 바뀐"것처럼 보이는 서사적 약점이 있다. 이를 분해하기 위해
-중간 조건(`policy_only`, `segmentation_only`)을 추가한 4모드 구조로 실험한다(§5). 접근제어·TCP
-도달성은 결정론적 속성이라 동일 시나리오를 반복하면 항상 같은 결과가 나오는 것이 정상이며, 극단값
-(0%/100%) 자체는 결함이 아니다 — 오히려 4모드 결과가 정책축/네트워크축 중 정확히 예상되는 축에만
-반응하는 패턴이 "각 통제요소가 자기 역할만 정확히 수행한다"는 근거가 된다(§11).
+바뀌므로 결과가 "스위치 하나로 전부 바뀐" 것처럼 보이는 서사적 약점이 있다. 이를 분해하기 위해
+중간 조건(`policy_only`, `segmentation_only`)을 추가한 4모드 구조로 실험한다(§5).
+
+**보안효과 지표는 개별 요청의 allow/deny 비율이 아니라 유효 통신 그래프(Effective Communication
+Graph)의 구조적 노출범위로 측정한다(§11).** 접근제어·TCP 도달성 판정 자체는 결정론적이다 —
+동일한 시나리오를 반복하면 항상 같은 결과가 나오는 것이 정상이다. 문제는 이를 요약하는 지표를
+"몇 %가 allow/deny였는가"로 잡으면 결과가 0%/100%에 몰려 임의로 짜맞춘 것처럼 보일 위험이
+있다는 점이다. 이를 해소하기 위해 Basta et al.(NOMS 2022)이 제안한 **AVOD(Average Out-Degree)**
+/**TINR(Transitive Internal Network Reachability)** 로 "침해 시 도달 가능한 범위가 통제 적용
+전후로 얼마나, 어느 축을 따라 줄어드는가"를 그래프 구조로 측정한다. 4개 모드의 AVOD/TINR이
+정책축/네트워크축 중 정확히 예상되는 축에만 반응하는 패턴 자체가 "각 통제요소가 자기 역할만
+정확히 수행한다"는 근거가 된다.
 
 ## 2. 실험 환경 구성
 
@@ -66,13 +73,16 @@ O영역에는 공개 서비스(`public_app`)와 외부 생성형 AI 모의 서�
 
 통제 구성요소:
 
-- **PEP / API Gateway (`pep`)**: 모든 S영역 업무 간 호출을 중계하는 유일한 경로. 요청 행위를
-  서버 측에서 판정하고, 출발 업무의 워크로드 신원을 검증하며, OPA에 정책을 질의한다.
+- **PEP / API Gateway (`pep`)**: 정상적인 S영역 업무 간 호출에서 정책판단 및 집행을 수행하는
+  통제 경로. Flat 환경(`baseline`/`policy_only`)에서는 PEP를 우회하는 직접 통신경로가 네트워크
+  계층에 남아 있을 수 있으며, Segmented 환경(`segmentation_only`/`proposed`)에서는 업무별
+  네트워크 분리가 이 직접경로 자체를 제거한다 — 이 우회 가능성 자체를 Network Graph(§11)로
+  측정한다.
 - **PDP (`opa`)**: 사용자, 역할, 단말 신뢰, 출발/목적 업무, 행위, 목적, 정보등급을 평가한다.
 - **Transfer CDS (`transfer_cds`)**: S/O 경계에서 승인·등급·목적·콘텐츠·무결성을 검증한다.
-  본 연구의 주 검증대상인 내부 마이크로세그멘테이션에 대한 **보조 검증**으로 취급한다(논문
-  3.2.1절 참고).
-- **JSONL 감사로그**: PEP·CDS·업무 서비스 각각이 요청/결정/지연시간을 기록한다.
+  본 연구의 주 검증대상인 내부 마이크로세그멘테이션에 대한 **보조 검증**이며, 실험 전
+  사전검증에만 쓰인다(§8.2).
+- **JSONL 감사로그**: PEP·CDS·업무 서비스 각각이 요청/결정/지연시간을 기록한다(§13).
 
 ### 포트 번호와 서버 표현
 
@@ -87,9 +97,12 @@ Docker 네트워크를 분리한다. 즉 "단일 물리 호스트에서 컨테�
 | 포트 | 대상 | 용도 |
 |---|---|---|
 | 18080 | `pep` | 정책 집행 지점(모든 업무 간 호출이 통과) |
-| 18090 | `transfer_cds` | S/O 경계 전송 |
+| 18090 | `transfer_cds` | S/O 경계 전송(사전검증용) |
 | 18181 | `opa` | 정책 조회(디버깅용) |
 | 18001–18005 | `customer_app`~`approval_app` | 각 업무 워크로드의 `/call`(§4 참고). 실험 하네스가 "실제 출발 업무"로서 요청을 만들기 위한 진입점이며, 운영 환경의 접근경로가 아니다 |
+
+도달성 전수검사(§8.4)는 호스트 포트가 아니라 컨테이너 내부 포트(App 8000, DB 5432)를 컨테이너
+네트워크 네임스페이스 안에서 직접 검사하므로 이 표와는 별개다.
 
 ## 3. 정책 모델과 5튜플 권한 테이블
 
@@ -114,7 +127,9 @@ Docker 네트워크를 분리한다. 즉 "단일 물리 호스트에서 컨테�
 
 행위(action)는 클라이언트가 자칭하지 않는다. `services/app/main.py`는 `/records`처럼 뭉뚱그린
 엔드포인트 대신 업무별 엔드포인트를 노출하고, PEP(`services/pep/main.py`)가 `(HTTP method,
-path)` 조합을 정규식 테이블로 매칭해 canonical action을 서버 측에서 결정한다.
+path)` 조합을 정규식 테이블로 매칭해 canonical action을 서버 측에서 결정한다. 이 매핑은
+`scenarios/business_endpoints.csv`로도 외부화되어 있어(§8.3), 정책공간 탐색 스크립트가 동일한
+소스를 참조한다.
 
 | 엔드포인트 | 행위(action) |
 |---|---|
@@ -157,22 +172,22 @@ OPA에 전달되어 어떤 튜플과도 일치하지 않으므로 기본거부�
 위장(스푸핑)이나 미등록 워크로드는 4개 모드 어디에서도 함께 차단되며, 이는 모든 환경이 공유하는
 PEP 구조적 방어가 정책 세분화·네트워크 분리와 독립적임을 보여준다.
 
-실험 하네스는 이 구조를 실제로 검증하기 위해, 정상/역할·목적·행위 위반 시나리오는 호스트에서
-PEP를 직접 두드리지 않고 **실제 출발 업무 컨테이너의 `/call`**을 거친다(§8의 `entry_point=call`).
-출발 업무 자체를 위장하는 시나리오만 예외적으로 PEP를 직접 호출해(`entry_point=direct`)
+실험 하네스는 이 구조를 실제로 검증하기 위해, 정책공간 탐색(§8.4)과 사전검증 시나리오(§8.2)
+모두 호스트에서 PEP를 직접 두드리지 않고 **실제 출발 업무 컨테이너의 `/call`**을 거친다.
+출발 업무 자체를 위장하는 사전검증 시나리오(U07/U08)만 예외적으로 PEP를 직접 호출해
 "PEP가 자기선언을 신뢰하지 않는지"를 검증한다.
 
 ## 5. 비교 환경: 2x2 ablation 설계
 
 두 통제요소를 각각 독립적으로 켜고 끌 수 있도록 4개의 `compose.<mode>.yml`을 둔다. 모드 이름과
-파일명은 논문 본문과 1:1로 대응한다.
+파일명은 논문 본문(Table 4)과 1:1로 대응한다.
 
 | 모드 | compose 파일 | 네트워크 축 | 정책 축 | 비고 |
 |---|---|---|---|---|
-| `baseline` | `compose.baseline.yml` | flat(`flat_s` 공유망) | broad(`baseline.rego`) | 두 통제요소 모두 미적용 |
+| `baseline` | `compose.baseline.yml` | flat(`flat_s` 공유망) | broad(`baseline.rego`) | 두 통제요소 모두 미적용(기준 조건) |
 | `policy_only` | `compose.policy_only.yml` | flat(`flat_s` 공유망) | finegrained(`proposed.rego`) | 정책 세분화만 적용 |
 | `segmentation_only` | `compose.segmentation_only.yml` | segmented(업무별 `*_segment`) | broad(`baseline.rego`) | 네트워크 분리만 적용 |
-| `proposed` | `compose.proposed.yml` | segmented(업무별 `*_segment`) | finegrained(`proposed.rego`) | 두 통제요소 모두 적용 |
+| `proposed` | `compose.proposed.yml` | segmented(업무별 `*_segment`) | finegrained(`proposed.rego`) | 두 통제요소 결합 |
 
 - **네트워크 축**: flat은 모든 S영역 앱·DB가 `flat_s` 하나의 Docker 네트워크를 공유한다.
   segmented는 업무별 앱·DB·PEP만 공유하는 개별 Docker 네트워크(`*_segment`)로 분리해, 서비스가
@@ -187,7 +202,7 @@ PEP를 직접 두드리지 않고 **실제 출발 업무 컨테이너의 `/call`
   분리됐는가"와 "Rego 정책이 역할까지 세분화하는가"이지 "신원을 검증하는가"가 아니기 때문이다.
 
 각 compose 파일은 호스트 포트(18001–18005/18080/18090/18181)가 동일하므로 항상 하나만 기동한다
-(§7.2).
+(§7).
 
 ## 6. 사전 준비
 
@@ -210,7 +225,10 @@ pip install -r requirements.txt
 
 ## 7. 실험 실행
 
-### 7.1 정책 유닛 테스트(선택, 매 실험 전 권장)
+### 7.1 정책 유닛 테스트(권장, 실험 전 1회)
+
+정책 파일(`policies/*.rego`)은 실험 내내 고정되어 있으므로 모드별로 반복할 필요 없이 실험 시작
+전 한 번만 실행하면 된다.
 
 ```bash
 docker run --rm -v "$(pwd)/policies:/policies" openpolicyagent/opa:1.4.2-static \
@@ -219,280 +237,258 @@ docker run --rm -v "$(pwd)/policies:/policies" openpolicyagent/opa:1.4.2-static 
 ```
 
 `policies/proposed_test.rego`가 정상 5-튜플 allow와 역할/목적/행위 불일치·미신뢰 단말·반대
-방향·무관 업무 조합의 deny를 검증하고, `policies/cds_test.rego`가 C01–C06에 대응하는 S/O
-전송 조건과 "S등급이면서 콘텐츠 검사에도 실패하는" 경계조건(두 deny 규칙이 동시에 참이 되어
-`eval_conflict_error`가 나지 않는지)을 검증한다. 이 테스트를 통과한 정책 버전만 실험에
-사용한다(재현성 확보 — 결과가 우연히 잘못 작성된 Rego 때문이 아님을 보장).
+방향·무관 업무 조합의 deny를 검증하고, `policies/cds_test.rego`가 S/O 전송 조건과 "S등급이면서
+콘텐츠 검사에도 실패하는" 경계조건(두 deny 규칙이 동시에 참이 되어 `eval_conflict_error`가
+나지 않는지)을 검증한다. 이 테스트를 통과한 정책 버전만 실험에 사용한다.
 
 `policies/` 디렉터리 전체(`opa test /policies`)를 한 번에 검사하지 않는다 — `baseline.rego`와
 `proposed.rego`가 둘 다 `package financial.access`에서 서로 다른 `default decision`을 정의하므로
 (`baseline_cds.rego`/`cds.rego`도 `package financial.cds`에서 동일하게 충돌), 함께 로드하면
-"multiple default rules" 컴파일 오류가 발생한다. `run_all.sh`도 모드별로 필요한 정책 파일만
-지정해서 검사한다(정책 축이 finegrained인 `policy_only`/`proposed`만 opa test를 수행한다).
+"multiple default rules" 컴파일 오류가 발생한다.
 
-### 7.2 4개 모드 순차 실행
-
-4개 compose 파일 모두 동일한 호스트 포트(18001–18005/18080/18090/18181)를 쓰므로 **한 번에 하나씩만**
-기동한다. `baseline`부터 `proposed`까지 순서대로 반복한다:
+### 7.2 구조적 보안효과 실험(4.1/4.2) — `run_graph_experiment.py`
 
 ```bash
-docker compose -f compose.baseline.yml up -d --build --wait
-./scripts/run_all.sh baseline
-docker compose -f compose.baseline.yml down -v
+python scripts/run_graph_experiment.py
+```
 
-docker compose -f compose.policy_only.yml up -d --build --wait
-./scripts/run_all.sh policy_only
-docker compose -f compose.policy_only.yml down -v
+4개 모드를 순서대로 기동·검증·정리한다. 모드마다: `docker compose up -d --build --wait` →
+사전검증(`run_policy_tests.py`/`run_cds_tests.py`를 `--fail-on-mismatch`로, §8.2) → 환경
+메타데이터 수집(`collect_env.py`) → 90쌍 도달성 전수검사(`run_reachability_tests.py`, §8.4) →
+80조합 정책공간 탐색(`run_policy_space.py`, §8.3) → `docker compose down -v`. 사전검증·도달성·
+정책공간 중 하나라도 실패하면 스택을 **내리지 않고** 즉시 중단한다 — 원인 조사를 위해 실패
+상태를 그대로 보존하기 위함이다. 4개 모드가 모두 끝나면 `build_effective_graph.py`(Network/
+Policy/Effective Graph 생성)와 `analyze_graph_metrics.py`(AVOD/TINR 계산)를 자동으로 이어서
+실행한다. 대략 30~40분 소요된다(환경에 따라 다름).
 
-docker compose -f compose.segmentation_only.yml up -d --build --wait
-./scripts/run_all.sh segmentation_only
-docker compose -f compose.segmentation_only.yml down -v
+개별 단계를 직접 실행할 수도 있다(디버깅용, `--mode`는 `baseline`/`policy_only`/
+`segmentation_only`/`proposed` 중 하나):
 
+```bash
 docker compose -f compose.proposed.yml up -d --build --wait
-./scripts/run_all.sh proposed
-docker compose -f compose.proposed.yml down -v
-```
-
-`--wait`는 Docker Compose가 healthcheck를 정의한 서비스(모든 DB, 업무 App, PEP, `public_app`,
-`external_ai`)의 상태가 실제로 `healthy`가 될 때까지 기다렸다가 반환하게 한다. DB→App, App/OPA→
-PEP처럼 짧은 형식(short-form) `depends_on`은 의존 서비스가 "시작"됐다는 순서만 보장할 뿐 요청을
-받을 준비(healthy)가 됐다는 것까지 보장하지 않으므로, `--wait` 없이 바로 `run_all.sh`를 실행하면
-컨테이너가 아직 뜨는 중일 때 첫 요청 몇 건이 연결 실패로 새는 경우가 있다. OPA(`-static` 이미지라
-셸이 없어 Docker 헬스체크 자체를 붙일 수 없음)만은 이 대상에서 빠지는데, 대신 PEP/CDS가 OPA
-호출을 자체적으로 재시도하도록 구현되어 있다(§4, §13의 `opa_transport_error`).
-
-`run_all.sh <mode>`는 다음을 순서대로 실행한다: ① `opa test`(정책 축이 finegrained인 모드만) ②
-`collect_env.py`(환경 메타데이터 수집) ③ 업무흐름 정책 테스트(30회 반복) ④ S/O 전송 CDS
-테스트(30회 반복) ⑤ App·DB 도달성 테스트(45개 조합) ⑥ 성능 테스트(4개 흐름 × 30배치 × 배치당
-200회).
-
-개별 스크립트를 직접 실행할 수도 있다(`--mode`는 `baseline`/`policy_only`/`segmentation_only`/
-`proposed` 중 하나):
-
-```bash
-python scripts/collect_env.py --results-dir results
-python scripts/run_policy_tests.py --mode proposed --repeat 30
-python scripts/run_cds_tests.py --mode proposed --repeat 30
+python scripts/run_policy_tests.py --mode proposed --repeat 1 --fail-on-mismatch
+python scripts/run_cds_tests.py --mode proposed --repeat 1 --fail-on-mismatch
 python scripts/run_reachability_tests.py --mode proposed
-python scripts/run_performance_tests.py --mode proposed --batches 30 --per-batch 200
+python scripts/run_policy_space.py --mode proposed
+docker compose -f compose.proposed.yml down -v
+
+python scripts/build_effective_graph.py
+python scripts/analyze_graph_metrics.py
 ```
 
-두 모드 이상을 동시에 실행하면 동일한 호스트 포트를 사용하므로 충돌한다. 반드시 한 환경을 종료한
-뒤 다른 환경을 실행한다. `results/pep_audit_<mode>.jsonl` 등 감사로그는 호스트 디렉터리
-(`./results`)에 바인드 마운트되므로 `docker compose down -v`로 컨테이너/볼륨을 내려도 남아있다
-— 같은 모드를 다시 실행하면 이전 로그 뒤에 이어서 append된다(분석 스크립트는
-`experiment_run_id`로 최신 실행분만 골라낸다).
-
-### 7.3 분석
-
-4개 모드 모두 실행을 마친 뒤(각 모드의 최신 `raw_*_<mode>_*.csv`와 `pep_audit_<mode>.jsonl`이
-`results/`에 있어야 한다) 한 번만 실행한다:
+### 7.3 성능 실험(4.3) — `run_experiment.py`
 
 ```bash
-python scripts/analyze_results.py --results-dir results
+python scripts/run_experiment.py --rounds 12
+```
+
+이미지를 한 번만 빌드한 뒤, 4개 조건을 12개 독립 반복 라운드에 걸쳐 균형화된 순서로(§9)
+재기동하며 측정한다. 라운드마다 `docker compose up -d --wait` → `run_performance_tests.py
+--round-id <r> --order-position <p>` → `docker compose down -v`를 반복한다. 대략 1.5~2시간
+소요되므로(환경에 따라 다름), §7.2의 구조적 보안효과 결과를 먼저 확인한 뒤 실행하는 것을
+권장한다.
+
+### 7.4 분석
+
+```bash
+python scripts/analyze_graph_metrics.py --results-dir results   # 4.1/4.2 (보통 7.2에서 이미 자동 실행됨)
+python scripts/analyze_results.py --results-dir results          # 4.3/4.4
 ```
 
 산출물은 [§10](#10-분석-및-산출물)에 정리했다.
 
-### 7.4 통신 그래프(선택, 정성적 그림용)
+### 7.5 통신 그래프 시각화(선택)
+
+`build_effective_graph.py`가 만드는 `*.graphml` 파일은 Gephi, Cytoscape 또는
+`networkx.read_graphml` + matplotlib으로 열어 정성적 그림을 그릴 수 있다(4.1/4.2절 보조 그림).
+
+## 8. 시나리오 및 자산 구성
+
+### 8.1 업무자산 목록 — `scenarios/assets.csv`
+
+논문 3.4.1의 정점집합 V(10개 업무자산 = 5개 업무 × app/db, PDP/PEP 제외)를 그대로 담은
+파일이다. 각 행은 `asset_id`, `business`, `tier`(`app`/`db`), `compose_service`(Docker Compose
+서비스명), `target_port`(App 8000 / DB 5432)로 구성된다. 도달성 전수검사(§8.4)와 정책공간
+탐색(§8.3)의 그래프 구성 스크립트가 모두 이 파일을 노드 정의의 단일 소스로 사용한다.
+
+### 8.2 정책·CDS 사전검증 시나리오 — `authorized_flows.csv`, `unauthorized_flows.csv`, `cds_flows.csv`
+
+A01–A05(정상 5-튜플), U01–U08(위반 8유형), C01–C06(S/O 전송)은 여전히 존재하지만, **더 이상
+정량적 보안효과 지표가 아니라 실험 전 사전검증(precondition)** 으로만 쓰인다 — 정책·서비스
+구성의 구현 오류가 효과 측정에 혼입되지 않도록 확인하는 단계이며, 이후 4장의 AVOD/TINR·성능
+지표에는 포함하지 않는다.
 
 ```bash
-python scripts/build_communication_graph.py results/raw_policy_proposed_<timestamp>.csv \
-  --allowed-only --output results/proposed_communication_graph.png
+python scripts/run_policy_tests.py --mode proposed --repeat 1 --fail-on-mismatch
+python scripts/run_cds_tests.py --mode proposed --repeat 1 --fail-on-mismatch
 ```
 
-허용된 요청만으로 방향 그래프를 그려 실제 관측된 업무 간 통신 관계를 시각화한다(정책 표
-자체는 §3의 표가 더 정확한 1차 자료이며, 이 그래프는 "관측된 흐름이 설계와 일치하는가"를
-보여주는 보조 그림이다).
+`--fail-on-mismatch`는 기대값과 다르거나(`matches_expected != true`) PEP<->OPA/목적지 연결
+실패 같은 실행 오류가 하나라도 있으면 exit 1로 종료한다. 각 행은 `entry_point` 컬럼으로 요청
+경로를 지정한다: `call`은 실제 출발 업무 컨테이너의 `POST /call`(§4)을 거치고, `direct`(U07/U08만
+해당)는 PEP를 직접 호출하며 워크로드 서명을 생략(`missing`)하거나 위조(`invalid`)해 "PEP가
+자기선언을 신뢰하지 않는지"를 검증한다.
 
-## 8. 시나리오 구성
+### 8.3 업무 엔드포인트 — `scenarios/business_endpoints.csv`
 
-### 8.1 업무흐름 정책 시나리오 — `scenarios/authorized_flows.csv`, `unauthorized_flows.csv`
+5개 업무가 각각 노출하는 `(method, path)`를 담은 파일이다(§3의 행위-엔드포인트 매핑과 동일한
+내용을 CSV로 외부화). `run_policy_space.py`가 목적업무별로 어떤 행위를 요청해야 하는지 여기서
+조회한다.
 
-각 행은 `entry_point` 컬럼으로 테스트 하네스가 요청을 만드는 경로를 지정한다.
+### 8.4 정책공간 전수탐색 — `scripts/run_policy_space.py`
 
-- **`call`**: `scripts/run_policy_tests.py`가 `source_service`가 가리키는 실제 업무 컨테이너의
-  `POST /call`(호스트 포트 18001–18005)을 호출한다. 출발 업무 신원은 컨테이너가 스스로
-  서명하므로 위조할 수 없고, `role`/`purpose`/`destination`/`method`/`path`만 시나리오가
-  지정한 대로 전달된다.
-- **`direct`**: PEP(18080)의 `/proxy/{destination}{path}`를 직접 호출하면서
-  `claimed_source_service`/`claimed_source_business`를 자칭하고, `signature_mode`에 따라
-  서명을 생략(`missing`)하거나 위조(`invalid`)한다. 오직 신원 위장 자체를 검증하는 두 시나리오
-  (U07, U08)만 이 경로를 쓴다.
-
-정상 흐름 A01–A05는 §3의 5-튜플과 1:1 대응한다. 위반 흐름 U01–U08은 각각 다른 위반 축을
-검증한다. CSV의 기대값 컬럼은 baseline/proposed라는 모드명이 아니라 **정책 축**을 기준으로
-`expected_broad_policy`/`expected_finegrained_policy`로 저장되어 있다 — 실행 스크립트가
-`common.MODE_AXES`로 각 모드의 정책 축을 조회해 둘 중 하나를 읽으므로, `baseline`과
-`segmentation_only`는 `expected_broad_policy`를, `policy_only`와 `proposed`는
-`expected_finegrained_policy`를 사용한다(네트워크 축은 이 CSV의 기대값에 영향을 주지 않는다).
-
-| ID | violation_type | 의미 | broad 정책 기대값 | finegrained 정책 기대값 |
-|---|---|---|---|---|
-| U01 | role_mismatch | loan_approver가 loan_reviewer 전용 행위 시도 | allow | deny |
-| U02 | purpose_mismatch | 목적이 튜플과 다름(`loan_approval`을 심사 조회에 사용) | allow | deny |
-| U03 | action_mismatch | `submit_for_approval`을 승인이 아닌 customer로 전송 | allow | deny |
-| U04 | reverse_direction | customer가 loan을 조회(A01의 역방향) | allow | deny |
-| U05 | unrelated_cross_business | approval이 credit에 신용평가 요청 | allow | deny |
-| U06 | untrusted_device | 신뢰되지 않은 단말 | deny | deny |
-| U07 | unregistered_workload | 등록되지 않은 업무명을 자칭(PEP 직접호출) | deny | deny |
-| U08 | identity_spoofing | 등록된 업무(loan)를 사칭하되 서명 위조(PEP 직접호출) | deny | deny |
-
-U06–U08은 PEP의 구조적 방어(단말 신뢰, 워크로드 신원 검증)에 걸리므로 정책 축과 무관하게 항상
-deny다(`STRUCTURAL_VIOLATION_TYPES`, §11). U01–U05는 Rego 정책의 세분화 여부에 따라 결과가
-갈리는, 이 실험의 핵심 대비 지점(`POLICY_VIOLATION_TYPES`, §11)이며, 4개 모드 중 정책 축이
-finegrained인 `policy_only`/`proposed`에서만 deny로 바뀐다 — 네트워크가 분리된
-`segmentation_only`에서도 정책이 broad라면 U01–U05는 여전히 allow된다는 점이 네트워크 분리와
-정책 세분화가 서로 다른 위반을 막는다는 것을 보여준다.
-
-### 8.2 도달성 시나리오 — `scenarios/reachability_matrix.csv`
-
-논문 3.2.1절은 "업무서비스 간 연계"와 "데이터 저장계층에 대한 접근"을 서로 다른 통제지점으로
-구분한다. 이를 그대로 반영해 두 계층을 모두 검사한다.
-
-- **DB 도달성**: 5개 업무 × 5개 DB = 25개 조합(자기 DB 5 + 교차 업무 DB 20)
-- **업무서비스(App) 도달성**: 5개 업무 앱 사이의 자기 자신을 제외한 5×4=20개 조합
-
-총 45개 조합을 `scripts/run_reachability_tests.py`가 `docker compose exec <container> python
-/app/probe.py <target_host> <target_port>`로 TCP 연결 성공 여부만 확인한다(애플리케이션 인증
-여부와 무관하게 네트워크 계층 도달성만 측정). App 도달성 조합은 "정책 판단·집행과정을 우회한
-업무 간 직접 통신"이 네트워크 수준에서 실제로 불가능한지를 보여준다 — 네트워크 축이
-segmented인 모드(`segmentation_only`/`proposed`)에서는 PEP를 거치지 않고 예컨대 `customer_app`이
-`loan_app`에 직접 연결할 네트워크 경로 자체가 없어야 한다. 이 기대값은 **네트워크 축에만**
-반응해야 한다 — `policy_only`(flat + finegrained)에서도 정책을 아무리 세분화해도 네트워크가
-공유망이면 PEP를 우회한 직접 경로는 여전히 도달 가능해야 정상이다(§11).
-
-### 8.3 S/O 전송 CDS 시나리오 — `scenarios/cds_flows.csv`
-
-C01–C06. §1에서 밝힌 대로 본 연구의 주 검증대상은 아니며, S/O 경계에 대한 보조 검증이다.
-
-## 9. 성능 측정 구조와 배치 설계
-
-동일한 정책·입력으로 동일 요청을 반복하는 것은 독립 표본이 아니다. 따라서 성능은 **배치
-단위**로 측정한다: `loan`이 시작점인 4개 정상 흐름(customer/credit/aml/approval)마다 warmup
-후 `--batches`(기본 30)개의 측정 배치를 만들고, 배치당 `--per-batch`(기본 200)회 요청한다.
-각 요청은 `loan_app`의 `/call`(§4의 실제 워크로드 경로)을 통해 이뤄진다. 배치는 통계적으로
-독립된 단위로 취급하는 반복 측정 구간일 뿐, 배치마다 프로세스나 컨테이너를 재기동하는 것은
-아니다(그런 의미의 "독립 배치"가 아니라는 점에 주의).
+논문 3.4.1의 정책경로 구성 방법이다. `policies/data.json`에서 실제 쓰이는 role(2개:
+`loan_reviewer`/`loan_approver`)·purpose(2개: `loan_screening`/`loan_approval`) 값을 추출하고,
+5개 출발업무 × 4개 목적업무(자기 제외) × role × purpose = **80개 조합**을 전부 실제
+`/call → HMAC → PEP → OPA` 경로로 호출한다(§4). 행위(action)는 목적업무가 `business_endpoints.csv`
+로 노출하는 값 하나로 고정되므로 자유 변수가 아니다.
 
 ```bash
-python scripts/run_performance_tests.py --mode proposed --batches 30 --per-batch 200 --warmup 20
+python scripts/run_policy_space.py --mode proposed
 ```
 
-배치 요약값(median)을 통계 단위로 사용하고, 배치 내 낱개 요청을 독립 표본으로 취급하지 않는다
-(§12).
+HTTP status만으로는 정책적 deny와 `opa_transport_error` 같은 실행 오류가 구분되지 않으므로,
+PEP 감사로그의 실제 `decision`을 `attempt_id`+`experiment_run_id`로 조인해 최종 판정을 삼는다
+(`common.join_audit_decision`, §11). (source_business, destination) 쌍에 대해 80개 조합 중
+**하나라도 allow가 있으면** 유효 통신 그래프의 Policy Graph에 간선이 생긴다 — "이 업무에서 저
+업무로 갈 수 있는 정당한 업무 맥락이 하나라도 있는가"를 묻는 것이다.
+
+### 8.5 도달성 전수검사 — `scripts/run_reachability_tests.py`
+
+`assets.csv`의 10개 자산 각각을 출발지로, 나머지 9개 자산까지 직접 TCP 연결이 가능한지
+**3회씩** 검사한다(총 90개 방향성 관계 × 3회). 자산당 프로브 컨테이너를 1회만 띄워(`docker run
+--rm --network container:<source_container_id> <app 이미지> python probe.py <target1> ...`)
+나머지 9개 목적지를 한 번에 검사한다 — 출발 자산의 Docker 네트워크 네임스페이스를 프로브
+컨테이너가 그대로 공유하므로, DB 컨테이너(Python이 없는 `postgres:17-alpine`)도 이미지를
+건드리지 않고 "출발지"로 취급할 수 있다.
+
+```bash
+python scripts/run_reachability_tests.py --mode proposed
+```
+
+3회 결과가 갈리면(`stable=false`) 스크립트가 실패(exit 1)하며 표준에러에 어느 관계가 불안정한지
+출력한다 — 결과를 비율로 뭉개서 덮어쓰지 않고 원인을 조사하도록 강제하기 위함이다(접근제어·TCP
+도달성은 결정론적이어야 정상이므로, 불안정한 결과 자체가 조사할 문제다).
+
+## 9. 성능 측정 구조와 라운드 설계
+
+동일한 정책·입력으로 동일 요청을 반복하는 것은 독립 표본이 아니다. 이전 버전은 이를 "배치"로만
+해결했지만(한 프로세스에서 여러 배치를 연속 측정), 측정순서·실행환경이 결과에 주는 영향을 줄이기
+위해 **네 실험조건을 독립적으로 재기동하는 12개 반복 라운드**로 확장했다. 라운드마다 각 조건이
+실행순서의 동일한 위치에 배치되도록 순서를 균형화한다 — `scripts/run_experiment.py`가 cyclic
+Latin square(라운드마다 시작 조건을 한 칸씩 돌리는 결정론적 균형화 기법)로 12라운드 순서를
+생성하며, 12라운드(=4조건 순환 3바퀴)에서 각 조건은 4개 실행위치(1~4번째)에 정확히 3회씩
+배치된다.
+
+각 라운드: 여신심사에서 시작하는 **네 개** 정상 업무흐름(customer/credit/aml/approval; 승인자가
+loan을 조회하는 역방향 흐름은 정책·기능 검증에서 이미 다루므로 성능측정은 심사 단계에 집중한다)
+마다 20회 워밍업 후 **3개 배치**, 배치당 200회 요청을 측정한다. 각 요청은 `loan_app`의
+`/call`(§4)을 통해 이뤄진다.
+
+```bash
+python scripts/run_experiment.py --rounds 12 --batches 3 --per-batch 200 --warmup 20
+```
+
+**라운드 대표값 산출**: 라운드 내 각 흐름의 배치 median들을 다시 median으로 묶어 "흐름 대표값"을
+만들고, 네 흐름의 대표값을 동일 가중으로 다시 median을 취해 "라운드 대표값" 하나를 만든다
+(`scripts/analyze_results.py`의 `round_representative`). 12개 라운드 대표값이 최종 통계 단위이며,
+배치 내 낱개 요청이나 흐름 하나만을 독립 표본으로 취급하지 않는다(§12).
 
 ## 10. 분석 및 산출물
 
-`python scripts/analyze_results.py --results-dir results`가 만드는 파일(4개 모드 모두 실행을
-마친 뒤 한 번만 실행한다):
+### 10.1 구조적 보안효과(4.1/4.2) — `analyze_graph_metrics.py`
 
 | 파일 | 내용 |
 |---|---|
-| `experiment_summary.csv` | §11의 핵심 지표를 **롱포맷**(`metric`, `mode`, `policy_axis`, `network_axis`, `value`, `relative_change_vs_baseline`)으로 요약. 모드별 행 외에, 축별 평균(다른 축은 평균으로 소거)을 추가한 `axis_group` 행도 함께 실려 있어 "정책축만 반응/네트워크축만 반응" 패턴을 표에서 바로 확인할 수 있다(`mode` 칸이 빈 행) |
-| `exact_count_summary.csv` | 카테고리×모드별(정상흐름/비인가흐름·정책범위/비인가흐름·구조범위/App도달/DB도달/CDS) **정책판단이 완료된** 요청 수, 기대결과 일치 수, 실행 오류(execution_errors) 건수, 일치율 — Fisher 검정 대신 사용하는 1차 보안·기능 결과표 |
-| `blast_radius.csv` | 업무×모드별 Blast Radius(§11) |
-| `latency_by_flow.csv` | 흐름×배치×모드별 decision_ms/total_ms median |
-| `latency_confidence_intervals.csv` | decision_ms/total_ms의 median·IQR·p95·부트스트랩 95% CI(4개 모드) |
-| `statistical_tests.csv` | 배치 median 간 Mann-Whitney U 검정(baseline vs proposed 쌍만, 보조 지표) |
-| `security_effectiveness.png` | Authorized Flow Success Rate / Unauthorized Flow Block Rate / Cross-Business Service Reachability Rate / Cross-Business DB Reachability Rate 막대그래프(4개 모드) |
-| `blast_radius.png` | 업무별 Blast Radius 막대그래프(4개 모드) |
-| `latency_boxplot.png` | 배치별 decision_ms median 분포 박스플롯(4개 모드) |
-| `experiment_metadata.json` | `collect_env.py`가 수집한 실험장비·소프트웨어 버전·정책/시나리오 해시(§14) |
+| `{network,policy,effective}_graph_<mode>.graphml` | 모드별 Network/Policy/Effective 통신 그래프(NetworkX GraphML) |
+| `{network,policy,effective}_edges_<mode>.csv` | 위 그래프의 간선 목록 |
+| `graph_metrics.csv` | 모드별 AVOD/TINR 절대값 + Baseline 대비 상대적 변화(`relative_change_vs_baseline`), 그리고 축별 평균(다른 축은 평균으로 소거)을 더한 `axis_group` 행(`mode` 칸이 빈 행 — "정책축만 반응/네트워크축만 반응" 패턴을 표에서 바로 확인 가능) |
+| `node_metrics.csv` | 자산×모드별 out-degree, 전이적으로 도달 가능한 노드 수 |
+| `graph_avod.png`, `graph_tinr.png` | AVOD/TINR 막대그래프(4개 모드) |
+| `raw_network_edges_<mode>_<timestamp>.csv` | 90쌍 도달성 전수검사 원본(§8.5) |
+| `raw_policy_space_<mode>_<timestamp>.csv` | 80조합 정책공간 탐색 원본(§8.4) |
 
-이 세 PNG가 논문 4장 그림으로 바로 쓸 수 있는 산출물이다. 4개 모드 각각에 고정 색상(baseline=
-blue, policy_only=orange, segmentation_only=aqua, proposed=yellow)을 배정해 전 그래프에서
-시리즈 식별이 일관되도록 했다.
+### 10.2 성능(4.3) 및 감사추적성(4.4) — `analyze_results.py`
+
+| 파일 | 내용 |
+|---|---|
+| `performance_rounds.csv` | 모드×라운드별 라운드 대표값(`decision_ms`, `total_ms`) |
+| `performance_summary.csv` | 모드별 median·IQR·p95·부트스트랩 95% CI(12개 라운드 대표값 기준) |
+| `latency_boxplot.png` | 라운드 대표값 분포 박스플롯(4개 모드) |
+| `raw_performance_<mode>_r<NNN>_<timestamp>.csv` | 라운드별 개별 요청 원본 |
+
+### 10.3 공통
+
+| 파일 | 내용 |
+|---|---|
+| `experiment_metadata.json` | `collect_env.py`가 수집한 실험장비·소프트웨어 버전·정책/시나리오 해시(§14) |
+| `pep_audit_<mode>.jsonl`, `cds_audit_<mode>.jsonl` | 요청 단위 감사로그(§13) — 성공률 지표가 아니라 통신경로·정책판단·성능 측정결과의 추적자료로만 쓴다 |
+
+4개 모드 각각에 고정 색상(baseline=blue, policy_only=orange, segmentation_only=aqua,
+proposed=yellow, `scripts/plotting.py`)을 배정해 전 그래프에서 시리즈 식별이 일관되도록 했다.
 
 ## 11. 평가 지표 정의
 
-Authorized/Unauthorized Flow 지표(1, 2번)는 **정책판단이 실제로 완료된 요청만을 분모로
-삼는다.** `run_policy_tests.py`가 기록하는 `actual`(allow/deny)은 HTTP status 2xx 여부만
-보므로, PEP→OPA 연결 실패(`opa_transport_error`)·OPA 자체 오류(`opa_error`)·목적
-workload 연결 실패(`upstream_transport_error`)·미등록 목적지(`unknown_destination`) 같은
-정책과 무관한 실행 오류도 비2xx라서 그대로 "deny"로 섞여 들어갈 수 있다.
-`analyze_results.py`는 `attempt_id`+`experiment_run_id`로 각 요청을 PEP 감사로그와 1:1
-조인해 실제 `reason`을 확인하고, 위 실행 오류 사유이거나 애초에 매칭되는 감사로그가 없는
-요청은 분모·분자에서 제외한 뒤 `exact_count_summary.csv`의 `execution_errors` 컬럼으로
-별도 집계한다(신원 미검증 계열 사유인 `unregistered_workload`/`workload_signature_invalid`는
-실행 오류가 아니라 U07/U08이 검증하려는 정책적 판단 그 자체이므로 제외 대상이 아니다).
+논문 3.4.1/3.4.2를 그대로 구현한다. 두 지표 모두 N. Basta, M. Ikram, M. A. Kaafar, A. Walker,
+"Towards a Zero-Trust Micro-segmentation Network Security Strategy: An Evaluation Framework,"
+NOMS 2022에서 제안한 정의를 그대로 사용한다.
 
-1. **Authorized Flow Success Rate** = A01–A05 중 정책판단이 완료된 요청 가운데 `actual ==
-   allow` 비율. 4개 모드 모두 100%에 가까워야 한다 — 이 지표가 낮다면 정상 업무흐름 자체가
-   막힌 것이므로 정책 축·네트워크 축과 무관하게 회귀로 다뤄야 한다.
-2. **Unauthorized Flow Block Rate** = U01–U08 중 정책판단이 완료된 요청 가운데 `actual ==
-   deny` 비율. 4개 모드 모두 U06–U08(단말 미신뢰·미등록 워크로드·신원위장)은 PEP의 구조적
-   방어로 차단하므로, 이 값 하나만 보면 정책이 broad인 모드(`baseline`/`segmentation_only`)의
-   차단률이 실제보다 높아 보일 수 있다. 따라서 `exact_count_summary.csv`/
-   `experiment_summary.csv`에 `unauthorized_flow_block_rate_policy_scope`(U01–U05, Rego 정책
-   세분화 여부로 결과가 갈리는 시나리오)와 `unauthorized_flow_block_rate_structural_scope`
-   (U06–U08, 4개 모드 공통 방어)를 분리한 보조 지표를 함께 제공한다. **policy_scope는 정책
-   축에만 반응해야 한다**: `baseline`/`segmentation_only`(broad)는 낮고, `policy_only`/
-   `proposed`(finegrained)는 높다 — 네트워크를 분리해도(`segmentation_only`) 정책이
-   광범위하면 역할/목적 위반 자체는 막지 못한다는 것을 직접 보여준다.
-3. **Cross-Business Reachability Rate** = `reachability_matrix.csv` 기준 두 개 하위 지표로
-   구성된다(PEP/OPA를 거치지 않는 순수 TCP 도달성 측정이라 실행 오류 제외 로직과는 무관하다).
-   - Service(App): `cross_business_app` 20개 조합 중 `reachable == true` 비율
-   - DB: `cross_business_db` 20개 조합 중 `reachable == true` 비율
-   기대값의 방향은 **네트워크 축**을 따른다 — flat(`baseline`/`policy_only`)은 도달 가능한
-   것이, segmented(`segmentation_only`/`proposed`)는 도달 불가능한 것이 기대값이다. 이
-   지표는 **네트워크 축에만** 반응해야 한다: 정책을 아무리 세분화해도(`policy_only`)
-   네트워크가 공유망이면 PEP를 우회한 직접 경로는 여전히 열려 있어야 정상이다.
-4. **Blast Radius** = 업무 i에서 직접 도달 가능한 **타 업무 DB 수**(`reachable == true`인
-   cross_business_db 조합 수, 0~4). `blast_radius.csv`에 업무×모드별 값을 싣고,
-   `experiment_summary.csv`에는 평균값(`blast_radius_mean`)과 최댓값(`blast_radius_max`,
-   침해 시 노출범위가 가장 큰 업무 기준)을 함께 싣는다. 5개 업무가 서로 동일한 방식으로
-   나머지 4개 업무 DB를 검사하므로 평균은 `(M-1) × DB Reachability Rate`(M=5)와 수학적으로
-   같은 값이 나온다 — 이 때문에 논문에서 두 지표를 독립적인 별개 효과처럼 나란히 제시하지
-   않도록 주의한다. 업무별 격차를 보여주려는 목적이라면 평균보다 `blast_radius_max`나
-   `blast_radius.csv`의 업무별 값이 더 적합하다. Reachability Rate와 마찬가지로 **네트워크
-   축에만** 반응해야 한다.
-
-**축별 요약 행(`experiment_summary.csv`의 `mode` 칸이 빈 행)**: 위 2~4번처럼 "한 축에만
-반응해야 하는" 지표에 대해, 다른 축은 평균으로 소거한 값을 함께 제공한다. 예를 들어
-`unauthorized_flow_block_rate_policy_scope`를 network_axis로 묶으면(flat 평균, segmented 평균)
-두 값이 거의 같아야 한다(네트워크와 무관) — 반대로 policy_axis로 묶으면(broad 평균, finegrained
-평균) 뚜렷이 갈려야 한다(정책 축에만 반응). `cross_business_db_reachability_rate`는 그
-반대여야 한다. 이 대칭적인 패턴 자체가 두 통제요소가 서로 다른 위협을 막고 있으며 결과가
-임의로 조정되지 않았다는 근거가 된다.
-5. **Latency** = PEP 감사로그의 `decision_ms`(PEP→PDP 정책결정 요청·응답 왕복시간 — PEP가
+1. **유효 통신 그래프(Effective Communication Graph)** `C_m = (A_m, V)`: 정점집합 V는 10개
+   업무자산(§8.1, PDP/PEP 제외)이다. 간선 `A_m`은 두 업무자산 사이에 **직접 TCP 통신이 가능하거나
+   (Network Graph, §8.5) PEP를 경유한 업무통신이 정책에 의해 허용되는 경우(Policy Graph, §8.4)**
+   의 합집합이다(Effective Graph). Policy Graph는 `/call`이 항상 App 컨테이너만을 대상으로 하므로
+   앱 노드 사이에서만 간선을 가질 수 있다 — DB는 네트워크 계층에서만(직접 TCP로만) 도달 가능하다.
+2. **AVOD(Average Out-Degree)** = `(1/|V|) * Σ OD(v)` — 업무자산 하나가 평균적으로 갖는 직접
+   통신관계의 크기. `scripts/analyze_graph_metrics.py`의 `avod()`가 Effective Graph의
+   `out_degree()` 합을 노드 수로 나눠 계산한다.
+3. **TINR(Transitive Internal Network Reachability)** = `|A^T|`(전이폐쇄 간선 집합의 크기,
+   `A^T`는 하나 이상의 통신경로를 통해 도달 가능한 자산관계의 집합) — 값이 작을수록 특정
+   업무자산이 침해된 이후 다른 자산을 경유해 연속적으로 도달할 수 있는 전체 범위가 제한됐다는
+   뜻이다. `nx.transitive_closure(G, reflexive=None)`의 간선 수로 계산한다(자기 자신으로의
+   self-loop는 포함하지 않는다).
+4. 각 실험조건에서 산출된 TINR/AVOD의 **절대값**과 **Baseline 대비 상대적 감소수준**을 함께
+   비교한다(`graph_metrics.csv`).
+5. **축별 요약 행**(`graph_metrics.csv`의 `mode` 칸이 빈 행): 정책축/네트워크축으로 각각 묶어
+   다른 축을 평균으로 소거한 값을 제공한다. 두 통제요소가 서로 다른 위협(정책 위반 vs 네트워크
+   우회)을 막고 있다면, 한 축으로 묶었을 때는 값이 뚜렷이 갈리고 다른 축으로 묶었을 때는 값이
+   거의 같아야 한다 — 이 대칭적인 패턴 자체가 결과가 임의로 조정되지 않았다는 근거가 된다.
+6. **Latency** = PEP 감사로그의 `decision_ms`(PEP→PDP 정책결정 요청·응답 왕복시간 — PEP가
    OPA에 HTTP 요청을 보내고 응답을 받기까지의 시간이며, 네트워크·직렬화/역직렬화를 포함한다.
    OPA 내부에서 Rego 평가에만 걸린 순수 연산시간이 아니다) / `total_ms`(PEP가 요청을 받은
-   시점부터 목적 workload의 응답을 받을 때까지 걸린 **PEP 처리 지연시간** — 클라이언트가
-   체감하는 종단간(end-to-end) 지연시간이 아니라 PEP 내부 처리구간만을 가리킨다) — 배치
-   median의 median/IQR/p95/부트스트랩 95% CI
-6. **Audit Completeness** = 필수 필드(§13)를 모두 포함하고 요청별 고유 `attempt_id`+
-   `experiment_run_id`로 상관관계가 확인된 감사로그 수 / 전체 요청 수. 동일 시나리오를
-   `--repeat`로 반복해도 요청마다 서로 다른 attempt_id를 쓰므로, 30번 중 일부만 로그에 남는
-   상황을 놓치지 않는다.
+   시점부터 목적 workload의 응답을 받을 때까지 걸린 **PEP 처리 지연시간**) — §9의 라운드
+   대표값 12개를 기준으로 median/IQR/p95/부트스트랩 95% CI.
+
+**감사로그는 더 이상 성공률/완전성 "비율" 지표로 산출하지 않는다**(3.4.2). §8.2의 정책·CDS
+사전검증과 §8.4의 정책공간 탐색은 모두 PEP/CDS 감사로그의 `decision`을 `common.join_audit_decision`
+으로 조인해 실행 오류(`opa_transport_error`/`opa_error`/`upstream_transport_error`/
+`unknown_destination`, `common.STRUCTURAL_ERROR_REASONS`)를 실제 정책적 거부와 구분하지만, 이
+조인 결과는 그래프 구성·사전검증 통과/실패 판정에만 쓰이고 4장 본문의 헤드라인 지표로 보고하지
+않는다. 감사로그 자체의 역할은 §13/§10.3 참고.
 
 ## 12. 통계 처리 원칙
 
-- **보안·기능 시나리오(정책·CDS·도달성)**: 동일한 정책·입력으로 동일 요청을 반복하는 것은
-  독립 표본이 아니므로 Fisher 정확검정을 적용하지 않는다. 대신 전체 시나리오 수, 기대결과
-  일치 수, 성공률/차단률/도달률 같은 **exact count/rate**를 1차 결과로 보고한다
-  (`exact_count_summary.csv`). `cross_business_{app,db}_reachability`의 기대값은 **네트워크
-  축**에 따라 다르다는 점에 주의한다 — flat(`baseline`/`policy_only`)은 설계상 도달 가능한
-  것이 기대값이고, segmented(`segmentation_only`/`proposed`)는 도달 불가능한 것이 기대값이다.
-- **2×2 ablation 축 분해**: 4개 모드의 결과를 정책 축/네트워크 축으로 묶어 평균낸 요약 행을
-  `experiment_summary.csv`에 함께 제공한다(§10, §11). 한 축으로 묶었을 때 값이 뚜렷이 갈리고
-  다른 축으로 묶었을 때 값이 거의 같다면, 그 지표가 해당 축에만 반응한다는 것을 수치로 보여준다.
-- **성능**: 4개 모드 × 4개 흐름 × 30개 측정 배치 × 배치당 200회로 측정하고, 배치 median을
-  통계 단위로 사용한다. Median, IQR, p95, 부트스트랩 95% CI를 4개 모드 모두에 대해
-  제시하고(`latency_confidence_intervals.csv`), 배치 median 간 Mann-Whitney U 검정은
-  baseline vs proposed 쌍에 대해서만 보조 지표로 유지한다(`statistical_tests.csv`) — 4-way
-  전체 조합 비교는 범위 밖이다.
-- 유의수준, 반복횟수, 배치 구성은 실험 전에 고정한다(`run_all.sh`의 기본값: 정책·CDS 30회,
-  성능 30배치×200회).
+- **구조적 보안효과(AVOD/TINR)**: 90개 자산관계·80개 정책조합을 전수검사한 결정론적 그래프
+  지표이므로 유의성 검정을 적용하지 않는다. 절대값·Baseline 대비 상대적 변화·축별 평균 분해로만
+  보고한다(§11). 도달성 검사는 3회 반복해 결과가 안정적인지(`stable`) 확인하고, 불안정하면
+  분석을 중단해 원인을 조사한다(비율로 뭉개지 않는다, §8.5).
+- **성능**: 4개 조건 × 12개 독립 반복 라운드 × 4개 흐름 × 3개 측정 배치 × 배치당 200회로
+  측정한다. 라운드 대표값(§9) 12개를 통계 단위로 사용해 median, IQR, p95, 2,000회 부트스트랩
+  95% CI를 제시한다(`performance_summary.csv`). 라운드 순서는 균형화된 cyclic Latin square로
+  고정하며(§9), 4-way 전체 조합 간 가설검정(Mann-Whitney U 등)은 수행하지 않는다 — 목적이
+  "통계적으로 유의한 차이"가 아니라 "조건별 지연시간 분포와 그 폭"을 보여주는 것이기 때문이다.
+- 유의수준, 반복횟수, 라운드/배치 구성은 실험 전에 고정한다(`run_experiment.py`의 기본값:
+  12라운드 × 3배치 × 200회).
 
 ## 13. 감사로그 필드
 
 PEP(`results/pep_audit_<mode>.jsonl`, `<mode>`는 `baseline`/`policy_only`/`segmentation_only`/
-`proposed`)는 매 요청마다 다음 필드를 기록한다(허용/거부 모든 경로에서 동일한 필드 집합을 남겨
-Audit Completeness가 구조적으로 보장되도록 했다).
-`scenario_id` 필드는 정책·CDS 테스트에서는 시나리오 원래 ID가 아니라 `run_policy_tests.py`/
-`run_cds_tests.py`가 요청마다 생성하는 고유 `attempt_id`(예: `A01-r001`)를 담는다 — 동일
-시나리오를 반복해도 요청 단위로 감사로그를 정확히 대응시키기 위함이다:
+`proposed`)는 매 요청마다 다음 필드를 기록한다(허용/거부 모든 경로에서 동일한 필드 집합을
+남긴다). 이 로그는 §11에서 밝힌 대로 성공률 "비율"로 집계하지 않고, 사전검증·정책공간 탐색의
+실제 판정 근거(`common.join_audit_decision`)이자 성능 라운드의 배치별 `decision_ms`/`total_ms`
+출처, 그리고 4.4절 감사추적성의 정성적 확인 대상으로 쓰인다.
+`scenario_id` 필드는 사전검증·정책공간 테스트에서는 시나리오 원래 ID가 아니라 스크립트가
+요청마다 생성하는 고유 `attempt_id`(예: `A01-r001`, `PS-loan-customer-loan_reviewer-loan_screening`)
+를 담는다 — 동일 시나리오를 반복해도 요청 단위로 감사로그를 정확히 대응시키기 위함이다:
 
 `ts`, `request_id`, `experiment_run_id`, `scenario_id`, `user_role`, `claimed_source_service`,
 `verified_workload_identity`, `source_business`, `destination`, `action`, `purpose`,
@@ -527,9 +523,10 @@ blocked`)뿐 아니라 PEP/CDS 자체의 구조적 실패도 구분해서 기록
   그리고 S/O 전송 정책의 경계조건(S등급+콘텐츠 검사 실패 동시 발생 시 규칙 충돌이 나지
   않는지)을 검증한다. 이 테스트를 통과한 정책 버전만 실험에 사용한다.
 - `scripts/collect_env.py`: CPU/코어/RAM/OS, Docker Engine·Compose 버전, OPA·PostgreSQL 이미지
-  digest, Python 버전, Git commit SHA, `policies/*.rego`·`data.json`·`scenarios/*.csv`의
-  SHA-256 해시, 실행 시각(UTC)을 `results/experiment_metadata.json`에 기록한다. 논문 Table
-  3(실험장비 및 소프트웨어 버전)의 근거자료로 쓸 수 있다.
+  digest, Python 버전, Git commit SHA, `policies/*.rego`·`data.json`·`scenarios/*.csv`(§8.1/8.3의
+  `assets.csv`/`business_endpoints.csv` 포함, 디렉터리 전체를 글롭으로 해싱하므로 별도 수정
+  없이 자동 포함된다)의 SHA-256 해시, 실행 시각(UTC)을 `results/experiment_metadata.json`에
+  기록한다. 논문 Table 3(실험장비 및 소프트웨어 버전)의 근거자료로 쓸 수 있다.
 
 ## 15. 해석 시 주의사항
 
@@ -539,12 +536,13 @@ blocked`)뿐 아니라 PEP/CDS 자체의 구조적 실패도 구분해서 기록
   체계로 대체해야 한다. 이 실험의 비밀키는 compose 파일에 평문으로 존재하는 lab 전용 값이다.
 - `customer_app`~`approval_app`의 18001–18005 포트는 테스트 하네스가 "실제 출발 업무"로서
   요청을 만들기 위한 진입점이며, 운영환경의 접근경로를 재현하지 않는다. 업무 간 횡적 이동
-  가능성은 이 포트가 아니라 §11의 Cross-Business Service/DB Reachability Rate·Blast Radius로
-  측정한다.
+  가능성은 이 포트가 아니라 §11의 AVOD/TINR로 측정한다.
 - 정규식 콘텐츠 검사(Transfer CDS)는 실제 DLP·백신·CDR의 대체물이 아니라 통제 흐름을 재현한
-  모의 기능이다.
+  모의 기능이며, 4장 정량 지표에는 포함하지 않는 사전검증 대상이다(§8.2).
 - OPA 입력의 `role`/`device_trust`/`purpose`는 실제 환경의 IdP, MFA, EDR, NAC, IAM/PAM 연동
   결과를 추상화한 것이다. 다만 `source_business`(출발 업무)만은 §4의 HMAC 검증을 거쳐 PEP가
   스스로 확인한 값이다.
+- AVOD/TINR은 90개 자산관계·80개 정책조합을 전수검사한 **결정론적** 그래프 지표이며 통계적
+  추정치가 아니다(§12) — 신뢰구간·유의성 검정은 성능 지표(라운드 대표값)에만 적용한다.
 - 따라서 논문의 결론은 "특정 상용 솔루션의 성능"이 아니라 "시스템·업무 경계와 정책집행지점을
   적용했을 때 통신경로·권한·정보이동 결과가 어떻게 달라지는가"로 한정해야 한다.

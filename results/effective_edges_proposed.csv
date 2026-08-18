@@ -1,0 +1,16 @@
+source,target
+customer_app,customer_db
+customer_db,customer_app
+loan_app,loan_db
+loan_app,aml_app
+loan_app,approval_app
+loan_app,credit_app
+loan_app,customer_app
+loan_db,loan_app
+credit_app,credit_db
+credit_db,credit_app
+aml_app,aml_db
+aml_db,aml_app
+approval_app,approval_db
+approval_app,loan_app
+approval_db,approval_app

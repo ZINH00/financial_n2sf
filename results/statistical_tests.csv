@@ -1,3 +1,0 @@
-test,statistic,p_value,n_batches_baseline,n_batches_proposed
-Mann-Whitney U - batch median decision_ms (baseline vs proposed),382.0,7.902926687211308e-37,120,120
-Mann-Whitney U - batch median total_ms (baseline vs proposed),3511.0,6.942215652494666e-12,120,120

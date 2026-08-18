@@ -1,0 +1,11 @@
+asset_id,business,tier,compose_service,target_port
+customer_app,customer,app,customer_app,8000
+customer_db,customer,db,customer_db,5432
+loan_app,loan,app,loan_app,8000
+loan_db,loan,db,loan_db,5432
+credit_app,credit,app,credit_app,8000
+credit_db,credit,db,credit_db,5432
+aml_app,aml,app,aml_app,8000
+aml_db,aml,db,aml_db,5432
+approval_app,approval,app,approval_app,8000
+approval_db,approval,db,approval_db,5432
