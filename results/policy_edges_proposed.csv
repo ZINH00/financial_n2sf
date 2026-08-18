@@ -1,0 +1,6 @@
+source,target
+loan_app,aml_app
+loan_app,approval_app
+loan_app,credit_app
+loan_app,customer_app
+approval_app,loan_app

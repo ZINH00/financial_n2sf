@@ -1,0 +1,91 @@
+mode,source_asset,target_asset,source_business,target_business,source_tier,target_tier,target_port,reachable,attempts,stable,elapsed_ms,error
+segmentation_only,customer_app,customer_db,customer,customer,app,db,5432,true,3,true,1.503,
+segmentation_only,customer_app,loan_app,customer,loan,app,app,8000,false,3,true,4000.306,gaierror: [Errno -2] Name or service not known; gaierror: [Errno -5] No address associated with hostname
+segmentation_only,customer_app,loan_db,customer,loan,app,db,5432,false,3,true,3964.512,gaierror: [Errno -2] Name or service not known
+segmentation_only,customer_app,credit_app,customer,credit,app,app,8000,false,3,true,3966.690,gaierror: [Errno -2] Name or service not known
+segmentation_only,customer_app,credit_db,customer,credit,app,db,5432,false,3,true,3964.667,gaierror: [Errno -2] Name or service not known
+segmentation_only,customer_app,aml_app,customer,aml,app,app,8000,false,3,true,3984.549,gaierror: [Errno -2] Name or service not known
+segmentation_only,customer_app,aml_db,customer,aml,app,db,5432,false,3,true,3966.868,gaierror: [Errno -2] Name or service not known
+segmentation_only,customer_app,approval_app,customer,approval,app,app,8000,false,3,true,3981.344,gaierror: [Errno -2] Name or service not known
+segmentation_only,customer_app,approval_db,customer,approval,app,db,5432,false,3,true,3956.047,gaierror: [Errno -2] Name or service not known
+segmentation_only,customer_db,customer_app,customer,customer,db,app,8000,true,3,true,1.542,
+segmentation_only,customer_db,loan_app,customer,loan,db,app,8000,false,3,true,3988.231,gaierror: [Errno -2] Name or service not known
+segmentation_only,customer_db,loan_db,customer,loan,db,db,5432,false,3,true,3977.064,gaierror: [Errno -2] Name or service not known
+segmentation_only,customer_db,credit_app,customer,credit,db,app,8000,false,3,true,3975.563,gaierror: [Errno -2] Name or service not known
+segmentation_only,customer_db,credit_db,customer,credit,db,db,5432,false,3,true,3959.096,gaierror: [Errno -2] Name or service not known
+segmentation_only,customer_db,aml_app,customer,aml,db,app,8000,false,3,true,3971.309,gaierror: [Errno -2] Name or service not known
+segmentation_only,customer_db,aml_db,customer,aml,db,db,5432,false,3,true,3972.450,gaierror: [Errno -2] Name or service not known
+segmentation_only,customer_db,approval_app,customer,approval,db,app,8000,false,3,true,3983.840,gaierror: [Errno -2] Name or service not known
+segmentation_only,customer_db,approval_db,customer,approval,db,db,5432,false,3,true,3969.194,gaierror: [Errno -2] Name or service not known
+segmentation_only,loan_app,customer_app,loan,customer,app,app,8000,false,3,true,3976.128,gaierror: [Errno -2] Name or service not known
+segmentation_only,loan_app,customer_db,loan,customer,app,db,5432,false,3,true,3966.163,gaierror: [Errno -2] Name or service not known
+segmentation_only,loan_app,loan_db,loan,loan,app,db,5432,true,3,true,0.591,
+segmentation_only,loan_app,credit_app,loan,credit,app,app,8000,false,3,true,3985.727,gaierror: [Errno -2] Name or service not known
+segmentation_only,loan_app,credit_db,loan,credit,app,db,5432,false,3,true,3961.770,gaierror: [Errno -2] Name or service not known
+segmentation_only,loan_app,aml_app,loan,aml,app,app,8000,false,3,true,3984.263,gaierror: [Errno -2] Name or service not known
+segmentation_only,loan_app,aml_db,loan,aml,app,db,5432,false,3,true,3966.096,gaierror: [Errno -2] Name or service not known
+segmentation_only,loan_app,approval_app,loan,approval,app,app,8000,false,3,true,3972.562,gaierror: [Errno -2] Name or service not known
+segmentation_only,loan_app,approval_db,loan,approval,app,db,5432,false,3,true,3976.984,gaierror: [Errno -2] Name or service not known
+segmentation_only,loan_db,customer_app,loan,customer,db,app,8000,false,3,true,3983.167,gaierror: [Errno -2] Name or service not known
+segmentation_only,loan_db,customer_db,loan,customer,db,db,5432,false,3,true,3963.029,gaierror: [Errno -2] Name or service not known
+segmentation_only,loan_db,loan_app,loan,loan,db,app,8000,true,3,true,0.839,
+segmentation_only,loan_db,credit_app,loan,credit,db,app,8000,false,3,true,3984.464,gaierror: [Errno -2] Name or service not known
+segmentation_only,loan_db,credit_db,loan,credit,db,db,5432,false,3,true,3966.384,gaierror: [Errno -2] Name or service not known
+segmentation_only,loan_db,aml_app,loan,aml,db,app,8000,false,3,true,3966.425,gaierror: [Errno -2] Name or service not known
+segmentation_only,loan_db,aml_db,loan,aml,db,db,5432,false,3,true,3968.460,gaierror: [Errno -2] Name or service not known
+segmentation_only,loan_db,approval_app,loan,approval,db,app,8000,false,3,true,3974.206,gaierror: [Errno -2] Name or service not known
+segmentation_only,loan_db,approval_db,loan,approval,db,db,5432,false,3,true,3963.361,gaierror: [Errno -2] Name or service not known
+segmentation_only,credit_app,customer_app,credit,customer,app,app,8000,false,3,true,3982.082,gaierror: [Errno -2] Name or service not known
+segmentation_only,credit_app,customer_db,credit,customer,app,db,5432,false,3,true,3956.825,gaierror: [Errno -2] Name or service not known
+segmentation_only,credit_app,loan_app,credit,loan,app,app,8000,false,3,true,3974.893,gaierror: [Errno -2] Name or service not known
+segmentation_only,credit_app,loan_db,credit,loan,app,db,5432,false,3,true,3965.980,gaierror: [Errno -2] Name or service not known
+segmentation_only,credit_app,credit_db,credit,credit,app,db,5432,true,3,true,0.650,
+segmentation_only,credit_app,aml_app,credit,aml,app,app,8000,false,3,true,3976.851,gaierror: [Errno -2] Name or service not known
+segmentation_only,credit_app,aml_db,credit,aml,app,db,5432,false,3,true,3974.844,gaierror: [Errno -2] Name or service not known; gaierror: [Errno -5] No address associated with hostname
+segmentation_only,credit_app,approval_app,credit,approval,app,app,8000,false,3,true,3971.525,gaierror: [Errno -2] Name or service not known
+segmentation_only,credit_app,approval_db,credit,approval,app,db,5432,false,3,true,3965.388,gaierror: [Errno -2] Name or service not known
+segmentation_only,credit_db,customer_app,credit,customer,db,app,8000,false,3,true,3976.964,gaierror: [Errno -2] Name or service not known; gaierror: [Errno -5] No address associated with hostname
+segmentation_only,credit_db,customer_db,credit,customer,db,db,5432,false,3,true,3970.845,gaierror: [Errno -2] Name or service not known
+segmentation_only,credit_db,loan_app,credit,loan,db,app,8000,false,3,true,3982.719,gaierror: [Errno -2] Name or service not known
+segmentation_only,credit_db,loan_db,credit,loan,db,db,5432,false,3,true,3967.292,gaierror: [Errno -2] Name or service not known
+segmentation_only,credit_db,credit_app,credit,credit,db,app,8000,true,3,true,0.523,
+segmentation_only,credit_db,aml_app,credit,aml,db,app,8000,false,3,true,3967.804,gaierror: [Errno -2] Name or service not known
+segmentation_only,credit_db,aml_db,credit,aml,db,db,5432,false,3,true,3967.652,gaierror: [Errno -2] Name or service not known
+segmentation_only,credit_db,approval_app,credit,approval,db,app,8000,false,3,true,3979.082,gaierror: [Errno -2] Name or service not known
+segmentation_only,credit_db,approval_db,credit,approval,db,db,5432,false,3,true,3968.495,gaierror: [Errno -2] Name or service not known
+segmentation_only,aml_app,customer_app,aml,customer,app,app,8000,false,3,true,3960.475,gaierror: [Errno -2] Name or service not known
+segmentation_only,aml_app,customer_db,aml,customer,app,db,5432,false,3,true,3968.104,gaierror: [Errno -2] Name or service not known
+segmentation_only,aml_app,loan_app,aml,loan,app,app,8000,false,3,true,3966.902,gaierror: [Errno -2] Name or service not known
+segmentation_only,aml_app,loan_db,aml,loan,app,db,5432,false,3,true,3961.664,gaierror: [Errno -2] Name or service not known
+segmentation_only,aml_app,credit_app,aml,credit,app,app,8000,false,3,true,3959.002,gaierror: [Errno -2] Name or service not known
+segmentation_only,aml_app,credit_db,aml,credit,app,db,5432,false,3,true,3975.069,gaierror: [Errno -2] Name or service not known
+segmentation_only,aml_app,aml_db,aml,aml,app,db,5432,true,3,true,0.818,
+segmentation_only,aml_app,approval_app,aml,approval,app,app,8000,false,3,true,3973.981,gaierror: [Errno -2] Name or service not known
+segmentation_only,aml_app,approval_db,aml,approval,app,db,5432,false,3,true,3979.897,gaierror: [Errno -2] Name or service not known
+segmentation_only,aml_db,customer_app,aml,customer,db,app,8000,false,3,true,3974.138,gaierror: [Errno -2] Name or service not known
+segmentation_only,aml_db,customer_db,aml,customer,db,db,5432,false,3,true,3970.093,gaierror: [Errno -2] Name or service not known
+segmentation_only,aml_db,loan_app,aml,loan,db,app,8000,false,3,true,3964.937,gaierror: [Errno -2] Name or service not known
+segmentation_only,aml_db,loan_db,aml,loan,db,db,5432,false,3,true,3956.384,gaierror: [Errno -2] Name or service not known
+segmentation_only,aml_db,credit_app,aml,credit,db,app,8000,false,3,true,3975.677,gaierror: [Errno -2] Name or service not known
+segmentation_only,aml_db,credit_db,aml,credit,db,db,5432,false,3,true,3980.739,gaierror: [Errno -2] Name or service not known
+segmentation_only,aml_db,aml_app,aml,aml,db,app,8000,true,3,true,0.808,
+segmentation_only,aml_db,approval_app,aml,approval,db,app,8000,false,3,true,3967.230,gaierror: [Errno -2] Name or service not known
+segmentation_only,aml_db,approval_db,aml,approval,db,db,5432,false,3,true,3975.613,gaierror: [Errno -2] Name or service not known
+segmentation_only,approval_app,customer_app,approval,customer,app,app,8000,false,3,true,3964.637,gaierror: [Errno -2] Name or service not known
+segmentation_only,approval_app,customer_db,approval,customer,app,db,5432,false,3,true,3983.072,gaierror: [Errno -2] Name or service not known
+segmentation_only,approval_app,loan_app,approval,loan,app,app,8000,false,3,true,3964.750,gaierror: [Errno -2] Name or service not known
+segmentation_only,approval_app,loan_db,approval,loan,app,db,5432,false,3,true,3986.064,gaierror: [Errno -2] Name or service not known
+segmentation_only,approval_app,credit_app,approval,credit,app,app,8000,false,3,true,3977.111,gaierror: [Errno -2] Name or service not known
+segmentation_only,approval_app,credit_db,approval,credit,app,db,5432,false,3,true,3967.572,gaierror: [Errno -2] Name or service not known
+segmentation_only,approval_app,aml_app,approval,aml,app,app,8000,false,3,true,3971.435,gaierror: [Errno -2] Name or service not known
+segmentation_only,approval_app,aml_db,approval,aml,app,db,5432,false,3,true,3981.935,gaierror: [Errno -2] Name or service not known
+segmentation_only,approval_app,approval_db,approval,approval,app,db,5432,true,3,true,0.719,
+segmentation_only,approval_db,customer_app,approval,customer,db,app,8000,false,3,true,3953.291,gaierror: [Errno -2] Name or service not known
+segmentation_only,approval_db,customer_db,approval,customer,db,db,5432,false,3,true,3981.715,gaierror: [Errno -2] Name or service not known; gaierror: [Errno -5] No address associated with hostname
+segmentation_only,approval_db,loan_app,approval,loan,db,app,8000,false,3,true,3971.233,gaierror: [Errno -2] Name or service not known
+segmentation_only,approval_db,loan_db,approval,loan,db,db,5432,false,3,true,3976.170,gaierror: [Errno -2] Name or service not known
+segmentation_only,approval_db,credit_app,approval,credit,db,app,8000,false,3,true,3965.641,gaierror: [Errno -2] Name or service not known
+segmentation_only,approval_db,credit_db,approval,credit,db,db,5432,false,3,true,3972.633,gaierror: [Errno -2] Name or service not known
+segmentation_only,approval_db,aml_app,approval,aml,db,app,8000,false,3,true,3972.009,gaierror: [Errno -2] Name or service not known
+segmentation_only,approval_db,aml_db,approval,aml,db,db,5432,false,3,true,3975.615,gaierror: [Errno -2] Name or service not known
+segmentation_only,approval_db,approval_app,approval,approval,db,app,8000,true,3,true,0.414,

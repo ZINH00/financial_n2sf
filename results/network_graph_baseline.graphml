@@ -1,0 +1,137 @@
+<?xml version='1.0' encoding='utf-8'?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">
+  <key id="d1" for="node" attr.name="tier" attr.type="string" />
+  <key id="d0" for="node" attr.name="business" attr.type="string" />
+  <graph edgedefault="directed">
+    <node id="customer_app">
+      <data key="d0">customer</data>
+      <data key="d1">app</data>
+    </node>
+    <node id="customer_db">
+      <data key="d0">customer</data>
+      <data key="d1">db</data>
+    </node>
+    <node id="loan_app">
+      <data key="d0">loan</data>
+      <data key="d1">app</data>
+    </node>
+    <node id="loan_db">
+      <data key="d0">loan</data>
+      <data key="d1">db</data>
+    </node>
+    <node id="credit_app">
+      <data key="d0">credit</data>
+      <data key="d1">app</data>
+    </node>
+    <node id="credit_db">
+      <data key="d0">credit</data>
+      <data key="d1">db</data>
+    </node>
+    <node id="aml_app">
+      <data key="d0">aml</data>
+      <data key="d1">app</data>
+    </node>
+    <node id="aml_db">
+      <data key="d0">aml</data>
+      <data key="d1">db</data>
+    </node>
+    <node id="approval_app">
+      <data key="d0">approval</data>
+      <data key="d1">app</data>
+    </node>
+    <node id="approval_db">
+      <data key="d0">approval</data>
+      <data key="d1">db</data>
+    </node>
+    <edge source="customer_app" target="customer_db" />
+    <edge source="customer_app" target="loan_app" />
+    <edge source="customer_app" target="loan_db" />
+    <edge source="customer_app" target="credit_app" />
+    <edge source="customer_app" target="credit_db" />
+    <edge source="customer_app" target="aml_app" />
+    <edge source="customer_app" target="aml_db" />
+    <edge source="customer_app" target="approval_app" />
+    <edge source="customer_app" target="approval_db" />
+    <edge source="customer_db" target="customer_app" />
+    <edge source="customer_db" target="loan_app" />
+    <edge source="customer_db" target="loan_db" />
+    <edge source="customer_db" target="credit_app" />
+    <edge source="customer_db" target="credit_db" />
+    <edge source="customer_db" target="aml_app" />
+    <edge source="customer_db" target="aml_db" />
+    <edge source="customer_db" target="approval_app" />
+    <edge source="customer_db" target="approval_db" />
+    <edge source="loan_app" target="customer_app" />
+    <edge source="loan_app" target="customer_db" />
+    <edge source="loan_app" target="loan_db" />
+    <edge source="loan_app" target="credit_app" />
+    <edge source="loan_app" target="credit_db" />
+    <edge source="loan_app" target="aml_app" />
+    <edge source="loan_app" target="aml_db" />
+    <edge source="loan_app" target="approval_app" />
+    <edge source="loan_app" target="approval_db" />
+    <edge source="loan_db" target="customer_app" />
+    <edge source="loan_db" target="customer_db" />
+    <edge source="loan_db" target="loan_app" />
+    <edge source="loan_db" target="credit_app" />
+    <edge source="loan_db" target="credit_db" />
+    <edge source="loan_db" target="aml_app" />
+    <edge source="loan_db" target="aml_db" />
+    <edge source="loan_db" target="approval_app" />
+    <edge source="loan_db" target="approval_db" />
+    <edge source="credit_app" target="customer_app" />
+    <edge source="credit_app" target="customer_db" />
+    <edge source="credit_app" target="loan_app" />
+    <edge source="credit_app" target="loan_db" />
+    <edge source="credit_app" target="credit_db" />
+    <edge source="credit_app" target="aml_app" />
+    <edge source="credit_app" target="aml_db" />
+    <edge source="credit_app" target="approval_app" />
+    <edge source="credit_app" target="approval_db" />
+    <edge source="credit_db" target="customer_app" />
+    <edge source="credit_db" target="customer_db" />
+    <edge source="credit_db" target="loan_app" />
+    <edge source="credit_db" target="loan_db" />
+    <edge source="credit_db" target="credit_app" />
+    <edge source="credit_db" target="aml_app" />
+    <edge source="credit_db" target="aml_db" />
+    <edge source="credit_db" target="approval_app" />
+    <edge source="credit_db" target="approval_db" />
+    <edge source="aml_app" target="customer_app" />
+    <edge source="aml_app" target="customer_db" />
+    <edge source="aml_app" target="loan_app" />
+    <edge source="aml_app" target="loan_db" />
+    <edge source="aml_app" target="credit_app" />
+    <edge source="aml_app" target="credit_db" />
+    <edge source="aml_app" target="aml_db" />
+    <edge source="aml_app" target="approval_app" />
+    <edge source="aml_app" target="approval_db" />
+    <edge source="aml_db" target="customer_app" />
+    <edge source="aml_db" target="customer_db" />
+    <edge source="aml_db" target="loan_app" />
+    <edge source="aml_db" target="loan_db" />
+    <edge source="aml_db" target="credit_app" />
+    <edge source="aml_db" target="credit_db" />
+    <edge source="aml_db" target="aml_app" />
+    <edge source="aml_db" target="approval_app" />
+    <edge source="aml_db" target="approval_db" />
+    <edge source="approval_app" target="customer_app" />
+    <edge source="approval_app" target="customer_db" />
+    <edge source="approval_app" target="loan_app" />
+    <edge source="approval_app" target="loan_db" />
+    <edge source="approval_app" target="credit_app" />
+    <edge source="approval_app" target="credit_db" />
+    <edge source="approval_app" target="aml_app" />
+    <edge source="approval_app" target="aml_db" />
+    <edge source="approval_app" target="approval_db" />
+    <edge source="approval_db" target="customer_app" />
+    <edge source="approval_db" target="customer_db" />
+    <edge source="approval_db" target="loan_app" />
+    <edge source="approval_db" target="loan_db" />
+    <edge source="approval_db" target="credit_app" />
+    <edge source="approval_db" target="credit_db" />
+    <edge source="approval_db" target="aml_app" />
+    <edge source="approval_db" target="aml_db" />
+    <edge source="approval_db" target="approval_app" />
+  </graph>
+</graphml>
