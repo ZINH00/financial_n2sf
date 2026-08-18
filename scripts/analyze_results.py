@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from common import MODES, RESULTS, bootstrap_ci, iqr, percentile, read_jsonl, write_csv
 from plotting import MODE_LABELS_SHORT, PALETTE, bar_labels, style_axes
 
-# 논문 4.3(정책집행 성능 영향)/4.4(감사추적성)만 담당한다. 4.1/4.2(구조적 보안효과,
+# 논문의 정책집행 성능 평가 + 감사로그 추적 검증만 담당한다. 구조적 보안효과(
 # AVOD/TINR)는 analyze_graph_metrics.py가 담당한다(build_effective_graph.py의
 # 산출물을 입력으로 사용). 3.4.2 방법론에 따라 감사로그는 더 이상 성공률 지표로
 # 산출하지 않고, 통신경로/정책판단/성능 측정결과를 요청 단위로 확인하는 정성적
@@ -203,7 +203,7 @@ def main() -> int:
 
     plot_latency(rounds_by_mode_decision, results)
 
-    # 4.4 감사추적성 검증: "비율"이 아니라 요청 단위 상관관계가 실제로 확인되는지
+    # 감사로그 추적성 검증: "비율"이 아니라 요청 단위 상관관계가 실제로 확인되는지
     # 정성적으로 스팟체크한다(논문 3.4.2: 감사로그는 추적자료로만 활용). 필수
     # 필드가 전부 있고 라운드마다 최소 1건 이상 매칭되면 통과로 간주한다.
     required_fields = {"request_id", "experiment_run_id", "scenario_id", "decision", "reason", "decision_ms", "total_ms"}

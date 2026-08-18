@@ -10,9 +10,13 @@ from common import MODES, ROOT
 # 스크립트(run_all.sh) 대신 순수 Python으로 작성한다.
 #
 # 각 모드: compose up --wait -> 사전검증(정책/CDS 시나리오, --fail-on-mismatch로
-# 실패 시 즉시 중단) -> 환경 메타데이터 수집 -> 90쌍 도달성 전수검사 ->
-# 80조합 정책공간 탐색 -> compose down -v. 전 모드 완료 후 그래프 구성 및
-# AVOD/TINR 분석을 자동 호출한다.
+# 실패 시 즉시 중단) -> 90쌍 도달성 전수검사 -> 80조합 정책공간 탐색 ->
+# compose down -v. 전 모드 완료 후 그래프 구성 및 AVOD/TINR 분석을 자동 호출한다.
+#
+# 환경 메타데이터(collect_env.py)는 루프 시작 전 딱 한 번만 수집한다 — 루프
+# 안에서 매 모드마다 수집하면 이미 preflight가 써 놓은 raw CSV/감사로그
+# 때문에 git status가 항상 dirty로 잡혀서(소스 코드는 그대로인데도) git_dirty
+# 필드가 재현성 메타데이터로서 의미가 없어진다.
 
 PYTHON = sys.executable
 
@@ -34,6 +38,9 @@ def compose_down(mode: str) -> None:
 
 
 def main() -> int:
+    print("[env] collecting metadata (once, before any experiment output is written)")
+    run([PYTHON, "scripts/collect_env.py", "--results-dir", "results"])
+
     for mode in MODES:
         print(f"\n===== mode={mode} =====")
         compose_up(mode)
@@ -49,9 +56,6 @@ def main() -> int:
         preflight_cds = run([PYTHON, "scripts/run_cds_tests.py", "--mode", mode, "--repeat", "1", "--fail-on-mismatch"], check=False)
         if preflight_cds.returncode != 0:
             raise SystemExit(f"preflight CDS scenarios failed for mode={mode}; stack left running for inspection (compose.{mode}.yml)")
-
-        print(f"[env] collecting metadata ({mode})")
-        run([PYTHON, "scripts/collect_env.py", "--results-dir", "results"])
 
         print(f"[network] exhaustive 90-pair reachability ({mode})")
         reach = run([PYTHON, "scripts/run_reachability_tests.py", "--mode", mode], check=False)

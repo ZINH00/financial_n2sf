@@ -291,8 +291,8 @@ python scripts/run_experiment.py --rounds 12
 ### 7.4 분석
 
 ```bash
-python scripts/analyze_graph_metrics.py --results-dir results   # 4.1/4.2 (보통 7.2에서 이미 자동 실행됨)
-python scripts/analyze_results.py --results-dir results          # 4.3/4.4
+python scripts/analyze_graph_metrics.py --results-dir results   # 4.1/4.2 구조적 보안효과 (보통 7.2에서 이미 자동 실행됨)
+python scripts/analyze_results.py --results-dir results          # 4.3 성능평가 + 감사로그 추적 검증
 ```
 
 산출물은 [§10](#10-분석-및-산출물)에 정리했다.
@@ -409,7 +409,7 @@ python scripts/run_experiment.py --rounds 12 --batches 3 --per-batch 200 --warmu
 | `raw_network_edges_<mode>_<timestamp>.csv` | 90쌍 도달성 전수검사 원본(§8.5) |
 | `raw_policy_space_<mode>_<timestamp>.csv` | 80조합 정책공간 탐색 원본(§8.4) |
 
-### 10.2 성능(4.3) 및 감사추적성(4.4) — `analyze_results.py`
+### 10.2 성능평가(4.3) 및 감사로그 추적 검증 — `analyze_results.py`
 
 | 파일 | 내용 |
 |---|---|
@@ -486,7 +486,7 @@ PEP(`results/pep_audit_<mode>.jsonl`, `<mode>`는 `baseline`/`policy_only`/`segm
 `proposed`)는 매 요청마다 다음 필드를 기록한다(허용/거부 모든 경로에서 동일한 필드 집합을
 남긴다). 이 로그는 §11에서 밝힌 대로 성공률 "비율"로 집계하지 않고, 사전검증·정책공간 탐색의
 실제 판정 근거(`common.join_audit_decision`)이자 성능 라운드의 배치별 `decision_ms`/`total_ms`
-출처, 그리고 4.4절 감사추적성의 정성적 확인 대상으로 쓰인다.
+출처, 그리고 감사로그 추적 검증의 정성적 확인 대상으로 쓰인다.
 `scenario_id` 필드는 사전검증·정책공간 테스트에서는 시나리오 원래 ID가 아니라 스크립트가
 요청마다 생성하는 고유 `attempt_id`(예: `A01-r001`, `PS-loan-customer-loan_reviewer-loan_screening`)
 를 담는다 — 동일 시나리오를 반복해도 요청 단위로 감사로그를 정확히 대응시키기 위함이다:
