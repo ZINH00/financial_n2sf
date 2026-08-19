@@ -11,7 +11,8 @@ from common import MODES, ROOT
 #
 # 각 모드: compose up --wait -> 사전검증(정책/CDS 시나리오, --fail-on-mismatch로
 # 실패 시 즉시 중단) -> 90쌍 도달성 전수검사 -> 80조합 정책공간 탐색 ->
-# compose down -v. 전 모드 완료 후 그래프 구성 및 AVOD/TINR 분석을 자동 호출한다.
+# compose down -v. 전 모드 완료 후 Network/Policy/Effective 그래프 구성 및
+# AOD/MPL/TINR 분석을 자동 호출한다.
 #
 # 환경 메타데이터(collect_env.py)는 루프 시작 전 딱 한 번만 수집한다 — 루프
 # 안에서 매 모드마다 수집하면 이미 preflight가 써 놓은 raw CSV/감사로그
@@ -69,9 +70,9 @@ def main() -> int:
 
         compose_down(mode)
 
-    print("\n===== building effective graphs =====")
+    print("\n===== building network/policy/effective graphs =====")
     run([PYTHON, "scripts/build_effective_graph.py"])
-    print("\n===== analyzing AVOD/TINR =====")
+    print("\n===== analyzing AOD/MPL/TINR =====")
     run([PYTHON, "scripts/analyze_graph_metrics.py"])
     return 0
 

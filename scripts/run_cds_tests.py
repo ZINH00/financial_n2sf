@@ -5,11 +5,17 @@ import time
 
 import httpx
 
-from common import MODE_AXES, MODES, RESULTS, as_bool, join_audit_decision, parse_json, read_csv, read_jsonl, timestamp, write_csv
+from common import MODES, RESULTS, as_bool, join_audit_decision, parse_json, read_csv, read_jsonl, timestamp, write_csv
+
+# 논문 Table 3: S/O Boundary(Transfer CDS)는 2x2의 "Experimental Factors"(Network,
+# Access Policy)에 포함되지 않는 고정 Security Control이다. 네 실험조건 모두
+# 동일한 policies/cds.rego를 사용하므로(compose.*.yml) 기대값도 모드와 무관하게
+# 하나만 존재한다 — --mode는 그 조건에서 CDS가 정상 배포·동작하는지 확인하는
+# 사전검증(preflight) 대상을 고르는 용도로만 남겨둔다.
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run S/O Transfer CDS validation scenarios.")
+    parser = argparse.ArgumentParser(description="Run S/O Transfer CDS validation scenarios (fixed Security Control, identical policy across all modes).")
     parser.add_argument("--mode", choices=list(MODES), required=True)
     parser.add_argument("--base-url", default="http://127.0.0.1:18090")
     parser.add_argument("--repeat", type=int, default=1)
@@ -17,12 +23,11 @@ def main() -> int:
     parser.add_argument("--fail-on-mismatch", action="store_true", help="사전검증(preflight) 모드: 기대값과 다르거나 실행 오류인 요청이 하나라도 있으면 exit 1")
     args = parser.parse_args()
     experiment_run_id = args.experiment_run_id or f"{args.mode}-{timestamp()}"
-    policy_axis = MODE_AXES[args.mode]["policy"]
 
     rows: list[dict] = []
     with httpx.Client(timeout=10.0) as client:
         for scenario in read_csv("cds_flows.csv"):
-            expected = scenario[f"expected_{policy_axis}_policy"]
+            expected = scenario["expected"]
             payload = {
                 "destination": scenario["destination"],
                 "data_grade": scenario["data_grade"],

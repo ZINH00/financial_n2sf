@@ -12,8 +12,9 @@ from common import MODES, RESULTS, percentile, timestamp, write_csv
 # 성능측정은 심사 단계에 집중한다 — 흐름을 5개로 늘리지 않는다). 이 스크립트는
 # 12개 독립 반복 라운드 중 하나를 담당하며(run_experiment.py가 라운드마다 이
 # 스크립트를 재기동한다), 각 흐름은 --batches(기본 3)개의 측정 배치로 나뉜다.
-# 배치별 요약값(median 등)을 통계 단위로 사용해 반복 측정을 유사-독립 표본처럼
-# 다루지 않는다.
+# 각 배치의 median은 흐름·라운드 대표값을 산출하기 위한 중간 요약값일 뿐이며,
+# 최종 통계단위는 이 스크립트가 아니라 analyze_results.py가 계산하는 "라운드
+# 대표값"(흐름별 배치 median의 median을 다시 median한 값) 12개다.
 FLOWS = [
     {"name": "loan_to_customer", "destination": "customer", "method": "GET", "path": "/customer-profile/CASE-0001", "purpose": "loan_screening"},
     {"name": "loan_to_credit", "destination": "credit", "method": "POST", "path": "/credit-assessment", "purpose": "loan_screening"},

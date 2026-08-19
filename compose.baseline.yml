@@ -275,7 +275,7 @@ services:
     - /policy/data.json
     volumes:
     - ./policies/baseline.rego:/policy/access.rego:ro
-    - ./policies/baseline_cds.rego:/policy/cds.rego:ro
+    - ./policies/cds.rego:/policy/cds.rego:ro
     - ./policies/data.json:/policy/data.json:ro
     networks:
     - control

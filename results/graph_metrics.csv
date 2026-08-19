@@ -1,17 +1,21 @@
-metric,mode,policy_axis,network_axis,value,node_count,effective_edge_count,reduction_vs_baseline,axis_group
-avod,baseline,broad,flat,9.0,10,90,nan,
-tinr,baseline,broad,flat,90,10,90,nan,
-avod,policy_only,finegrained,flat,9.0,10,90,0.0,
-tinr,policy_only,finegrained,flat,90,10,90,0.0,
-avod,segmentation_only,broad,segmented,3.0,10,30,0.6666666666666666,
-tinr,segmentation_only,broad,segmented,90,10,30,0.0,
-avod,proposed,finegrained,segmented,1.5,10,15,0.8333333333333334,
-tinr,proposed,finegrained,segmented,42,10,15,0.5333333333333333,
-avod,,broad,,6.0,,,nan,"policy_axis=broad (mean over baseline,segmentation_only)"
-avod,,finegrained,,5.25,,,nan,"policy_axis=finegrained (mean over policy_only,proposed)"
-avod,,,flat,9.0,,,nan,"network_axis=flat (mean over baseline,policy_only)"
-avod,,,segmented,2.25,,,nan,"network_axis=segmented (mean over segmentation_only,proposed)"
-tinr,,broad,,90,,,nan,"policy_axis=broad (mean over baseline,segmentation_only)"
-tinr,,finegrained,,66,,,nan,"policy_axis=finegrained (mean over policy_only,proposed)"
-tinr,,,flat,90,,,nan,"network_axis=flat (mean over baseline,policy_only)"
-tinr,,,segmented,66,,,nan,"network_axis=segmented (mean over segmentation_only,proposed)"
+layer,metric,mode,policy_axis,network_axis,value,node_count,edge_count
+network,aod,baseline,broad,flat,9.0,10,90
+policy,aod,baseline,broad,flat,4.0,5,20
+effective,aod,baseline,broad,flat,9.0,10,90
+effective,mpl,baseline,broad,flat,2,10,90
+effective,tinr,baseline,broad,flat,90,10,90
+network,aod,policy_only,finegrained,flat,9.0,10,90
+policy,aod,policy_only,finegrained,flat,1.0,5,5
+effective,aod,policy_only,finegrained,flat,9.0,10,90
+effective,mpl,policy_only,finegrained,flat,2,10,90
+effective,tinr,policy_only,finegrained,flat,90,10,90
+network,aod,segmentation_only,broad,segmented,1.0,10,10
+policy,aod,segmentation_only,broad,segmented,4.0,5,20
+effective,aod,segmentation_only,broad,segmented,3.0,10,30
+effective,mpl,segmentation_only,broad,segmented,2.888888888888889,10,30
+effective,tinr,segmentation_only,broad,segmented,90,10,30
+network,aod,proposed,finegrained,segmented,1.0,10,10
+policy,aod,proposed,finegrained,segmented,1.0,5,5
+effective,aod,proposed,finegrained,segmented,1.5,10,15
+effective,mpl,proposed,finegrained,segmented,3.0476190476190474,10,15
+effective,tinr,proposed,finegrained,segmented,42,10,15

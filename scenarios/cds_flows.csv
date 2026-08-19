@@ -1,7 +1,7 @@
-scenario_id,destination,data_grade,approved,purpose,role,device_trust,source_object_id,content_json,expected_broad_policy,expected_finegrained_policy
-C01,public,O,true,public_disclosure,publisher,trusted,OBJ-O-001,"{""statistic"": ""aggregate delinquency rate"", ""value"": 3.2}",allow,allow
-C02,external_ai,O,true,approved_ai_use,ai_user,trusted,OBJ-O-002,"{""task"": ""summarize approved public report""}",allow,allow
-C03,public,S,true,public_disclosure,publisher,trusted,OBJ-S-001,"{""internal_review"": ""confidential supervisory note""}",allow,deny
-C04,external_ai,O,true,approved_ai_use,ai_user,trusted,OBJ-O-003,"{""resident_id"": ""900101-1234567"", ""task"": ""summarize""}",allow,deny
-C05,public,O,false,public_disclosure,publisher,trusted,OBJ-O-004,"{""statistic"": ""unapproved draft""}",deny,deny
-C06,external_ai,O,true,approved_ai_use,ai_user,untrusted,OBJ-O-005,"{""task"": ""approved public text""}",deny,deny
+scenario_id,destination,data_grade,approved,purpose,role,device_trust,source_object_id,content_json,expected
+C01,public,O,true,public_disclosure,publisher,trusted,OBJ-O-001,"{""statistic"": ""aggregate delinquency rate"", ""value"": 3.2}",allow
+C02,external_ai,O,true,approved_ai_use,ai_user,trusted,OBJ-O-002,"{""task"": ""summarize approved public report""}",allow
+C03,public,S,true,public_disclosure,publisher,trusted,OBJ-S-001,"{""internal_review"": ""confidential supervisory note""}",deny
+C04,external_ai,O,true,approved_ai_use,ai_user,trusted,OBJ-O-003,"{""resident_id"": ""900101-1234567"", ""task"": ""summarize""}",deny
+C05,public,O,false,public_disclosure,publisher,trusted,OBJ-O-004,"{""statistic"": ""unapproved draft""}",deny
+C06,external_ai,O,true,approved_ai_use,ai_user,untrusted,OBJ-O-005,"{""task"": ""approved public text""}",deny

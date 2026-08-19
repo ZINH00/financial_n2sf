@@ -13,11 +13,14 @@ import matplotlib.pyplot as plt
 from common import MODES, RESULTS, bootstrap_ci, iqr, percentile, read_jsonl, write_csv
 from plotting import MODE_LABELS_SHORT, PALETTE, bar_labels, style_axes
 
-# 논문의 정책집행 성능 평가 + 감사로그 추적 검증만 담당한다. 구조적 보안효과(
-# AVOD/TINR)는 analyze_graph_metrics.py가 담당한다(build_effective_graph.py의
-# 산출물을 입력으로 사용). 3.4.2 방법론에 따라 감사로그는 더 이상 성공률 지표로
+# 논문 4.3(정책집행 성능 및 감사 추적성 분석)을 담당한다. 구조적 보안효과(4.1/4.2,
+# AOD/MPL/TINR)는 analyze_graph_metrics.py가 담당한다(build_effective_graph.py의
+# 산출물을 입력으로 사용). 3.4.2 방법론에 따라 감사로그는 별도의 성공률 지표로
 # 산출하지 않고, 통신경로/정책판단/성능 측정결과를 요청 단위로 확인하는 정성적
-# 추적자료로만 쓴다.
+# 추적자료로만 쓴다. 성능은 정책결정 지연시간(Policy Decision Latency)과 PEP
+# 요청 처리 지연시간(PEP-mediated Request Latency) 두 지표를 모두 평가한다.
+
+EXPECTED_ROUNDS = 12
 
 
 def latest_files(pattern: str) -> list[Path]:
@@ -116,7 +119,7 @@ def summarize(values: list[float]) -> dict[str, float]:
     }
 
 
-def plot_latency(rounds_by_mode: dict[str, list[float]], results: Path) -> None:
+def plot_latency(rounds_by_mode: dict[str, list[float]], results: Path, ylabel: str, filename: str) -> None:
     values = [rounds_by_mode.get(mode, []) for mode in MODES]
     if not any(values):
         return
@@ -129,11 +132,11 @@ def plot_latency(rounds_by_mode: dict[str, list[float]], results: Path) -> None:
     for element in ("whiskers", "caps"):
         for line in bp[element]:
             line.set_color(PALETTE["muted"])
-    ax.set_ylabel("Policy decision latency, per-round representative value (ms)")
+    ax.set_ylabel(ylabel)
     plt.setp(ax.get_xticklabels(), rotation=15, ha="right", fontsize=8.5)
     style_axes(ax)
     fig.tight_layout()
-    fig.savefig(results / "latency_boxplot.png", dpi=200, bbox_inches="tight", facecolor=fig.get_facecolor())
+    fig.savefig(results / filename, dpi=200, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
 
 
@@ -186,28 +189,42 @@ def main() -> int:
 
     write_csv(results / "performance_rounds.csv", ["mode", "round_id", "experiment_run_id", "decision_ms", "total_ms"], round_rows)
 
+    # 논문 3.4.2는 12개의 독립 반복 라운드를 전제로 통계(median/IQR/p95/부트스트랩
+    # CI)를 산출한다. 완전성 검사를 통과하지 못한 라운드가 있거나 모드당 라운드
+    # 수가 12개가 아니면 그 상태로 통계를 만들지 않고 즉시 중단한다 — 일부
+    # 라운드가 조용히 빠진 채로 4.3절 결과가 만들어지는 것을 막기 위함이다.
     if missing_rounds:
-        print(f"WARNING: {len(missing_rounds)} round(s) failed the completeness check (missing flow, missing batch, or audit-log success count != raw request count; excluded from statistics):", file=sys.stderr)
+        print(f"ERROR: {len(missing_rounds)} round(s) failed the completeness check (missing flow, missing batch, or audit-log success count != raw request count):", file=sys.stderr)
         for mode, round_id in missing_rounds:
             print(f"  mode={mode} round_id={round_id}", file=sys.stderr)
+        raise SystemExit("performance analysis aborted: every round must pass the completeness check before statistics are computed (see performance_rounds.csv)")
+
+    for mode in MODES:
+        n = sum(1 for r in round_rows if r["mode"] == mode)
+        if n != EXPECTED_ROUNDS:
+            raise SystemExit(f"performance analysis aborted: mode={mode} has {n} round(s), expected exactly {EXPECTED_ROUNDS} (논문 3.4.2: 12개의 독립 반복 라운드)")
 
     summary_rows = []
     rounds_by_mode_decision: dict[str, list[float]] = {}
+    rounds_by_mode_total: dict[str, list[float]] = {}
     for mode in MODES:
         decision_values = [r["decision_ms"] for r in round_rows if r["mode"] == mode and r["decision_ms"] is not None]
         total_values = [r["total_ms"] for r in round_rows if r["mode"] == mode and r["total_ms"] is not None]
         rounds_by_mode_decision[mode] = decision_values
+        rounds_by_mode_total[mode] = total_values
         summary_rows.append({"metric": "decision_ms", "mode": mode, **summarize(decision_values)})
         summary_rows.append({"metric": "total_ms", "mode": mode, **summarize(total_values)})
     write_csv(results / "performance_summary.csv", ["metric", "mode", "median", "iqr", "p95", "ci_low", "ci_high", "n_rounds"], summary_rows)
 
-    plot_latency(rounds_by_mode_decision, results)
+    plot_latency(rounds_by_mode_decision, results, "Policy Decision Latency, per-round representative value (ms)", "policy_decision_latency.png")
+    plot_latency(rounds_by_mode_total, results, "PEP-mediated Request Latency, per-round representative value (ms)", "pep_request_latency.png")
 
-    # 감사로그 추적성 검증: "비율"이 아니라 요청 단위 상관관계가 실제로 확인되는지
-    # 정성적으로 스팟체크한다(논문 3.4.2: 감사로그는 추적자료로만 활용). 필수
-    # 필드가 전부 있고 라운드마다 최소 1건 이상 매칭되면 통과로 간주한다.
+    # 감사로그 추적성 검증(4.3절): "비율"이 아니라 요청 단위 상관관계가 실제로
+    # 확인되는지 정성적으로 스팟체크한다(논문 3.4.2: 감사로그는 추적자료로만
+    # 활용). 위에서 이미 완전성 검사를 통과했으므로(그렇지 않으면 중단됨), 여기서는
+    # 필수 필드 스키마 자체가 갖춰져 있는지만 확인한다.
     required_fields = {"request_id", "experiment_run_id", "scenario_id", "decision", "reason", "decision_ms", "total_ms"}
-    traceability_ok = not missing_rounds and all(
+    traceability_ok = all(
         all(field in row for field in required_fields)
         for mode in MODES
         for row in read_jsonl(results / f"pep_audit_{mode}.jsonl")[:1]  # 필드 집합 자체는 파일당 1건만 확인해도 충분(모든 행이 동일 스키마)

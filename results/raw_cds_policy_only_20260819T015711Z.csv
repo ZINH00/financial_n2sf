@@ -1,0 +1,7 @@
+scenario_id,destination,data_grade,approved,purpose,role,device_trust,source_object_id,content_json,expected,mode,experiment_run_id,run_id,attempt_id,status_code,actual,matches_expected,latency_ms,error
+C01,public,O,true,public_disclosure,publisher,trusted,OBJ-O-001,"{""statistic"": ""aggregate delinquency rate"", ""value"": 3.2}",allow,policy_only,policy_only-20260819T015710Z,1,C01-r001,200,allow,true,16.275500,
+C02,external_ai,O,true,approved_ai_use,ai_user,trusted,OBJ-O-002,"{""task"": ""summarize approved public report""}",allow,policy_only,policy_only-20260819T015710Z,1,C02-r001,200,allow,true,7.842600,
+C03,public,S,true,public_disclosure,publisher,trusted,OBJ-S-001,"{""internal_review"": ""confidential supervisory note""}",deny,policy_only,policy_only-20260819T015710Z,1,C03-r001,403,deny,true,7.268800,
+C04,external_ai,O,true,approved_ai_use,ai_user,trusted,OBJ-O-003,"{""resident_id"": ""900101-1234567"", ""task"": ""summarize""}",deny,policy_only,policy_only-20260819T015710Z,1,C04-r001,403,deny,true,6.395500,
+C05,public,O,false,public_disclosure,publisher,trusted,OBJ-O-004,"{""statistic"": ""unapproved draft""}",deny,policy_only,policy_only-20260819T015710Z,1,C05-r001,403,deny,true,6.056800,
+C06,external_ai,O,true,approved_ai_use,ai_user,untrusted,OBJ-O-005,"{""task"": ""approved public text""}",deny,policy_only,policy_only-20260819T015710Z,1,C06-r001,403,deny,true,7.475600,

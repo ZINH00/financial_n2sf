@@ -7,41 +7,21 @@
       <data key="d0">customer</data>
       <data key="d1">app</data>
     </node>
-    <node id="customer_db">
-      <data key="d0">customer</data>
-      <data key="d1">db</data>
-    </node>
     <node id="loan_app">
       <data key="d0">loan</data>
       <data key="d1">app</data>
-    </node>
-    <node id="loan_db">
-      <data key="d0">loan</data>
-      <data key="d1">db</data>
     </node>
     <node id="credit_app">
       <data key="d0">credit</data>
       <data key="d1">app</data>
     </node>
-    <node id="credit_db">
-      <data key="d0">credit</data>
-      <data key="d1">db</data>
-    </node>
     <node id="aml_app">
       <data key="d0">aml</data>
       <data key="d1">app</data>
     </node>
-    <node id="aml_db">
-      <data key="d0">aml</data>
-      <data key="d1">db</data>
-    </node>
     <node id="approval_app">
       <data key="d0">approval</data>
       <data key="d1">app</data>
-    </node>
-    <node id="approval_db">
-      <data key="d0">approval</data>
-      <data key="d1">db</data>
     </node>
     <edge source="customer_app" target="aml_app" />
     <edge source="customer_app" target="approval_app" />

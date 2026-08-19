@@ -50,11 +50,13 @@ NSDI 2025의 ZTS(Zero Trust Segmentation)가 제안한 **통신 그래프 기반
 Graph)의 구조적 노출범위로 측정한다(§11).** 접근제어·TCP 도달성 판정 자체는 결정론적이다 —
 동일한 시나리오를 반복하면 항상 같은 결과가 나오는 것이 정상이다. 문제는 이를 요약하는 지표를
 "몇 %가 allow/deny였는가"로 잡으면 결과가 0%/100%에 몰려 임의로 짜맞춘 것처럼 보일 위험이
-있다는 점이다. 이를 해소하기 위해 Basta et al.(NOMS 2022)이 제안한 **AVOD(Average Out-Degree)**
-/**TINR(Transitive Internal Network Reachability)** 로 "침해 시 도달 가능한 범위가 통제 적용
-전후로 얼마나, 어느 축을 따라 줄어드는가"를 그래프 구조로 측정한다. 4개 모드의 AVOD/TINR이
-정책축/네트워크축 중 정확히 예상되는 축에만 반응하는 패턴 자체가 "각 통제요소가 자기 역할만
-정확히 수행한다"는 근거가 된다.
+있다는 점이다. 이를 해소하기 위해 Basta et al.(NOMS 2022)이 제안한 **AOD(Average Out-Degree)**
+/**MPL(Mean shortest Path Length)**/**TINR(Transitive Internal Network Reachability)** 로
+"침해 시 도달 가능한 범위가 통제 적용 전후로 얼마나 줄어드는가"를 그래프 구조로 측정한다(§11).
+AOD는 Network/Policy/Effective 세 계층 각각에서 따로 계산하므로, Network AOD는 네트워크 분리
+축에만, Policy AOD는 정책 세분화 축에만 반응하는 패턴 자체가 "각 통제요소가 자기 역할만 정확히
+수행한다"는 근거가 된다 — 축별 평균을 별도로 계산하지 않아도 계층을 나눈 것만으로 같은 서사를
+보여준다.
 
 ## 2. 실험 환경 구성
 
@@ -195,9 +197,10 @@ PEP 구조적 방어가 정책 세분화·네트워크 분리와 독립적임을
 - **정책 축**: broad(`policies/baseline.rego`)는 인증된 신뢰 단말이면 5개 업무 어디든 광범위하게
   허용한다. finegrained(`policies/proposed.rego`)는 role×source×destination×action×purpose
   5-튜플과 정확히 일치해야 허용한다(§3).
-- **CDS 정책도 정책 축을 따라간다**: flat·segmented와 무관하게, broad 모드는
-  `policies/baseline_cds.rego`(승인 여부만 확인), finegrained 모드는 `policies/cds.rego`(S 원본
-  금지, 승인된 O 파생본만 허용)를 사용한다.
+- **CDS(S/O 경계 통제)는 2×2의 실험요소(Network, Access Policy)에 포함되지 않는 고정 Security
+  Control이다**(논문 Table 3). 네 조건 모두 동일한 `policies/cds.rego`(S 원본 금지, 승인된 O
+  파생본만 허용)를 사용하며, 네트워크·정책 축과 무관하게 항상 같은 결과를 낸다 — 비교대상
+  이외의 구성요소가 결과에 영향을 주지 않도록 하기 위함이다(§8.2).
 - **워크로드 신원 검증(§4)은 4개 모드 모두 동일하게 적용된다** — 비교축은 "네트워크가
   분리됐는가"와 "Rego 정책이 역할까지 세분화하는가"이지 "신원을 검증하는가"가 아니기 때문이다.
 
@@ -242,9 +245,10 @@ docker run --rm -v "$(pwd)/policies:/policies" openpolicyagent/opa:1.4.2-static 
 나지 않는지)을 검증한다. 이 테스트를 통과한 정책 버전만 실험에 사용한다.
 
 `policies/` 디렉터리 전체(`opa test /policies`)를 한 번에 검사하지 않는다 — `baseline.rego`와
-`proposed.rego`가 둘 다 `package financial.access`에서 서로 다른 `default decision`을 정의하므로
-(`baseline_cds.rego`/`cds.rego`도 `package financial.cds`에서 동일하게 충돌), 함께 로드하면
-"multiple default rules" 컴파일 오류가 발생한다.
+`proposed.rego`가 둘 다 `package financial.access`에서 서로 다른 `default decision`을 정의하므로,
+함께 로드하면 "multiple default rules" 컴파일 오류가 발생한다. CDS는 네 조건 모두 `cds.rego`
+하나만 사용하므로(§5) 이 충돌이 없다(`baseline_cds.rego`는 더 이상 쓰지 않고 `archive/`로
+옮겼다).
 
 ### 7.2 구조적 보안효과 실험(4.1/4.2) — `run_graph_experiment.py`
 
@@ -258,7 +262,7 @@ python scripts/run_graph_experiment.py
 80조합 정책공간 탐색(`run_policy_space.py`, §8.3) → `docker compose down -v`. 사전검증·도달성·
 정책공간 중 하나라도 실패하면 스택을 **내리지 않고** 즉시 중단한다 — 원인 조사를 위해 실패
 상태를 그대로 보존하기 위함이다. 4개 모드가 모두 끝나면 `build_effective_graph.py`(Network/
-Policy/Effective Graph 생성)와 `analyze_graph_metrics.py`(AVOD/TINR 계산)를 자동으로 이어서
+Policy/Effective Graph 생성)와 `analyze_graph_metrics.py`(AOD/MPL/TINR 계산)를 자동으로 이어서
 실행한다. 대략 30~40분 소요된다(환경에 따라 다름).
 
 개별 단계를 직접 실행할 수도 있다(디버깅용, `--mode`는 `baseline`/`policy_only`/
@@ -315,7 +319,7 @@ python scripts/analyze_results.py --results-dir results          # 4.3 성능평
 
 A01–A05(정상 5-튜플), U01–U08(위반 8유형), C01–C06(S/O 전송)은 여전히 존재하지만, **더 이상
 정량적 보안효과 지표가 아니라 실험 전 사전검증(precondition)** 으로만 쓰인다 — 정책·서비스
-구성의 구현 오류가 효과 측정에 혼입되지 않도록 확인하는 단계이며, 이후 4장의 AVOD/TINR·성능
+구성의 구현 오류가 효과 측정에 혼입되지 않도록 확인하는 단계이며, 이후 4장의 AOD/MPL/TINR·성능
 지표에는 포함하지 않는다.
 
 ```bash
@@ -327,7 +331,9 @@ python scripts/run_cds_tests.py --mode proposed --repeat 1 --fail-on-mismatch
 실패 같은 실행 오류가 하나라도 있으면 exit 1로 종료한다. 각 행은 `entry_point` 컬럼으로 요청
 경로를 지정한다: `call`은 실제 출발 업무 컨테이너의 `POST /call`(§4)을 거치고, `direct`(U07/U08만
 해당)는 PEP를 직접 호출하며 워크로드 서명을 생략(`missing`)하거나 위조(`invalid`)해 "PEP가
-자기선언을 신뢰하지 않는지"를 검증한다.
+자기선언을 신뢰하지 않는지"를 검증한다. `cds_flows.csv`의 `expected`는 네 조건이 공유하는
+`cds.rego` 하나를 기준으로 한 단일 컬럼이다(§5) — 정책·네트워크 축과 무관하게 모든 모드에서
+같은 값을 기대한다.
 
 ### 8.3 업무 엔드포인트 — `scenarios/business_endpoints.csv`
 
@@ -401,21 +407,22 @@ python scripts/run_experiment.py --rounds 12 --batches 3 --per-batch 200 --warmu
 
 | 파일 | 내용 |
 |---|---|
-| `{network,policy,effective}_graph_<mode>.graphml` | 모드별 Network/Policy/Effective 통신 그래프(NetworkX GraphML) |
-| `{network,policy,effective}_edges_<mode>.csv` | 위 그래프의 간선 목록 |
-| `graph_metrics.csv` | 모드별 AVOD/TINR 절대값 + Baseline 대비 감소율(`reduction_vs_baseline`, 양수=Baseline보다 감소), 그리고 축별 평균(다른 축은 평균으로 소거)을 더한 `axis_group` 행(`mode` 칸이 빈 행 — "정책축만 반응/네트워크축만 반응" 패턴을 표에서 바로 확인 가능) |
-| `node_metrics.csv` | 자산×모드별 out-degree, 전이적으로 도달 가능한 노드 수 |
-| `graph_avod.png`, `graph_tinr.png` | AVOD/TINR 막대그래프(4개 모드) |
+| `{network,policy,effective}_graph_<mode>.graphml` | 모드별 Network(10노드)/Policy(5노드)/Effective(10노드) 통신 그래프(NetworkX GraphML) |
+| `{network,policy,effective}_edges_<mode>.csv` | 위 그래프의 간선 목록(`effective_edges_<mode>.csv`는 각 간선이 `direct_tcp`/`policy_mediated` 중 무엇 때문에 존재하는지도 함께 기록) |
+| `graph_metrics.csv` | 4개 모드 × 5개 지표(Network/Policy/Effective AOD, Effective MPL, Effective TINR) = 20개 행, 절대값만(`layer`,`metric`,`mode`,`value`,`node_count`,`edge_count`) — Baseline 대비 감소율이나 축별 평균은 3.4.2가 정의한 평가방법이 아니므로 포함하지 않는다(§11) |
+| `node_metrics.csv` | Effective Graph 기준 자산×모드별 out-degree, 전이적으로 도달 가능한 노드 수 |
+| `network_aod.png`, `policy_aod.png`, `effective_aod.png`, `effective_mpl.png`, `effective_tinr.png` | 지표별 막대그래프(4개 모드) — 계층별 AOD는 정점 수가 달라(10 vs 5) 절대값을 직접 비교하지 않으므로 하나로 합치지 않는다 |
 | `raw_network_edges_<mode>_<timestamp>.csv` | 90쌍 도달성 전수검사 원본(§8.5) |
 | `raw_policy_space_<mode>_<timestamp>.csv` | 80조합 정책공간 탐색 원본(§8.4) |
 
-### 10.2 성능평가(4.3) 및 감사로그 추적 검증 — `analyze_results.py`
+### 10.2 성능평가 및 감사로그 추적 검증(4.3) — `analyze_results.py`
 
 | 파일 | 내용 |
 |---|---|
 | `performance_rounds.csv` | 모드×라운드별 라운드 대표값(`decision_ms`, `total_ms`) |
-| `performance_summary.csv` | 모드별 median·IQR·p95·부트스트랩 95% CI(12개 라운드 대표값 기준) |
-| `latency_boxplot.png` | 라운드 대표값 분포 박스플롯(4개 모드) |
+| `performance_summary.csv` | 모드별 median·IQR·p95·부트스트랩 95% CI(12개 라운드 대표값 기준, 모드당 정확히 12개가 아니면 분석 자체가 실패한다) |
+| `policy_decision_latency.png` | Policy Decision Latency(`decision_ms`) 라운드 대표값 분포 박스플롯(4개 모드) |
+| `pep_request_latency.png` | PEP-mediated Request Latency(`total_ms`) 라운드 대표값 분포 박스플롯(4개 모드) |
 | `raw_performance_<mode>_r<NNN>_<timestamp>.csv` | 라운드별 개별 요청 원본 |
 
 ### 10.3 공통
@@ -430,34 +437,43 @@ proposed=yellow, `scripts/plotting.py`)을 배정해 전 그래프에서 시리�
 
 ## 11. 평가 지표 정의
 
-논문 3.4.1/3.4.2를 그대로 구현한다. 두 지표 모두 N. Basta, M. Ikram, M. A. Kaafar, A. Walker,
-"Towards a Zero-Trust Micro-segmentation Network Security Strategy: An Evaluation Framework,"
-NOMS 2022에서 제안한 정의를 그대로 사용한다.
+논문 3.4.1/3.4.2를 그대로 구현한다. 세 지표(AOD/MPL/TINR) 모두 N. Basta, M. Ikram, M. A. Kaafar,
+A. Walker, "Towards a Zero-Trust Micro-segmentation Network Security Strategy: An Evaluation
+Framework," NOMS 2022(논문 references [25])에서 제안한 정의를 그대로 사용한다.
 
-1. **유효 통신 그래프(Effective Communication Graph)** `C_m = (A_m, V)`: 정점집합 V는 10개
-   업무자산(§8.1, PDP/PEP 제외)이다. 간선 `A_m`은 두 업무자산 사이에 **직접 TCP 통신이 가능하거나
-   (Network Graph, §8.5) PEP를 경유한 업무통신이 정책에 의해 허용되는 경우(Policy Graph, §8.4)**
-   의 합집합이다(Effective Graph). Policy Graph는 `/call`이 항상 App 컨테이너만을 대상으로 하므로
-   앱 노드 사이에서만 간선을 가질 수 있다 — DB는 네트워크 계층에서만(직접 TCP로만) 도달 가능하다.
-2. **AVOD(Average Out-Degree)** = `(1/|V|) * Σ OD(v)` — 업무자산 하나가 평균적으로 갖는 직접
-   통신관계의 크기. `scripts/analyze_graph_metrics.py`의 `avod()`가 Effective Graph의
-   `out_degree()` 합을 노드 수로 나눠 계산한다.
-3. **TINR(Transitive Internal Network Reachability)** = `|A^T|`(전이폐쇄 간선 집합의 크기,
-   `A^T`는 하나 이상의 통신경로를 통해 도달 가능한 자산관계의 집합) — 값이 작을수록 특정
-   업무자산이 침해된 이후 다른 자산을 경유해 연속적으로 도달할 수 있는 전체 범위가 제한됐다는
-   뜻이다. `nx.transitive_closure(G, reflexive=None)`의 간선 수로 계산한다(자기 자신으로의
-   self-loop는 포함하지 않는다).
-4. 각 실험조건에서 산출된 TINR/AVOD의 **절대값**과 **Baseline 대비 상대적 감소수준**을 함께
-   비교한다(`graph_metrics.csv`).
-5. **축별 요약 행**(`graph_metrics.csv`의 `mode` 칸이 빈 행): 정책축/네트워크축으로 각각 묶어
-   다른 축을 평균으로 소거한 값을 제공한다. 두 통제요소가 서로 다른 위협(정책 위반 vs 네트워크
-   우회)을 막고 있다면, 한 축으로 묶었을 때는 값이 뚜렷이 갈리고 다른 축으로 묶었을 때는 값이
-   거의 같아야 한다 — 이 대칭적인 패턴 자체가 결과가 임의로 조정되지 않았다는 근거가 된다.
-6. **Latency** = PEP 감사로그의 `decision_ms`(PEP→PDP 정책결정 요청·응답 왕복시간 — PEP가
-   OPA에 HTTP 요청을 보내고 응답을 받기까지의 시간이며, 네트워크·직렬화/역직렬화를 포함한다.
-   OPA 내부에서 Rego 평가에만 걸린 순수 연산시간이 아니다) / `total_ms`(PEP가 요청을 받은
-   시점부터 목적 workload의 응답을 받을 때까지 걸린 **PEP 처리 지연시간**) — §9의 라운드
-   대표값 12개를 기준으로 median/IQR/p95/부트스트랩 95% CI.
+1. **세 계층 그래프**(논문 3.4.2): **Network Graph** `G_m^N`(정점 10개 = 5개 업무 ×
+   {app, db}, 두 자산 사이에 직접 TCP 통신이 가능하면 간선, §8.5의 90쌍 전수검사로 산출) /
+   **Policy Graph** `G_m^P`(정점 5개 = 업무 App 계층만 — `/call`이 항상 App 컨테이너만을
+   대상으로 하므로 정책적으로 허용된 간선은 앱 노드 사이에서만 존재, §8.4의 80조합 정책공간
+   탐색으로 산출) / **Effective Graph** `G_m^E`(정점 10개, 두 그래프 간선의 합집합 — DB는
+   네트워크 계층에서만(직접 TCP로만) 도달 가능). `scripts/build_effective_graph.py`가 세
+   그래프를 모두 생성하며 정점 수를 각각 10/5/10으로 강제 검증한다.
+2. **AOD(Average Out-Degree)** = `(1/|V|) * Σ OD(v)` — 자산 하나가 평균적으로 갖는 직접
+   통신관계의 크기(식 (1)). **Network/Policy/Effective 세 계층 각각에 대해 별도로 계산**한다
+   (`scripts/analyze_graph_metrics.py`의 `aod()`). 계층마다 정점 수(|V|)가 다르므로(10/5/10)
+   계층을 넘나드는 절대값 비교는 하지 않는다 — 같은 계층 안에서 4개 조건을 비교한다.
+3. **MPL(Mean shortest Path Length)** = `(1/|LSP_C|) * Σ|p|`(식 (2)) — `|p|`는 최단경로 p에
+   포함되는 **정점의 수**다. NetworkX의 `shortest_path_length`는 간선 수(hop count)를 반환하므로
+   `mpl()`은 여기에 `+1`을 더해 정점 수로 맞춘다. **Effective Graph 기준으로만** 계산한다 — 값이
+   클수록 침해 이후 목표 자산까지 도달하는 데 거쳐야 하는 경유지가 많다는(=측면이동이 어렵다는)
+   뜻이다.
+4. **TINR(Transitive Internal Network Reachability)** = `|A^T|`(식 (3), 전이폐쇄 간선 집합의
+   크기) — 값이 작을수록 특정 자산이 침해된 이후 다른 자산을 경유해 연속적으로 도달할 수 있는
+   전체 범위가 제한됐다는 뜻이다. **Effective Graph 기준으로만** `nx.transitive_closure(G,
+   reflexive=None)`의 간선 수로 계산한다(self-loop 미포함).
+5. **비교 방법**: 각 지표를 **동일 계층 내에서 4개 실험조건 간 절대값으로만** 비교한다(논문
+   3.4.2). Baseline 대비 상대적 감소율이나 축(Network/Policy) 평균 분해는 논문이 정의한 평가
+   방법이 아니므로 산출하지 않는다 — `graph_metrics.csv`는 계층×지표×모드 조합의 절대값
+   20행뿐이다(§10.1).
+6. **유의성 검정 미적용**: 이들 구조적 보안효과 지표는 정의된 자산관계와 정책조합을
+   전수평가(90쌍 도달성 + 80조합 정책공간)하여 산출한 **결정론적 값**이므로 별도의 유의성
+   검정을 적용하지 않는다(논문 3.4.2).
+7. **Latency** = PEP 감사로그의 `decision_ms`(**Policy Decision Latency**, PEP→PDP 정책결정
+   요청·응답 왕복시간 — PEP가 OPA에 HTTP 요청을 보내고 응답을 받기까지의 시간이며,
+   네트워크·직렬화/역직렬화를 포함한다. OPA 내부에서 Rego 평가에만 걸린 순수 연산시간이 아니다)
+   / `total_ms`(**PEP-mediated Request Latency**, PEP가 요청을 받은 시점부터 목적 workload의
+   응답을 받을 때까지 걸린 시간) — §9의 라운드 대표값 12개를 기준으로 median/IQR/p95/부트스트랩
+   95% CI.
 
 **감사로그는 더 이상 성공률/완전성 "비율" 지표로 산출하지 않는다**(3.4.2). §8.2의 정책·CDS
 사전검증과 §8.4의 정책공간 탐색은 모두 PEP/CDS 감사로그의 `decision`을 `common.join_audit_decision`
@@ -468,15 +484,19 @@ NOMS 2022에서 제안한 정의를 그대로 사용한다.
 
 ## 12. 통계 처리 원칙
 
-- **구조적 보안효과(AVOD/TINR)**: 90개 자산관계·80개 정책조합을 전수검사한 결정론적 그래프
-  지표이므로 유의성 검정을 적용하지 않는다. 절대값·Baseline 대비 상대적 변화·축별 평균 분해로만
-  보고한다(§11). 도달성 검사는 3회 반복해 결과가 안정적인지(`stable`) 확인하고, 불안정하면
-  분석을 중단해 원인을 조사한다(비율로 뭉개지 않는다, §8.5).
+- **구조적 보안효과(AOD/MPL/TINR)**: 90개 자산관계·80개 정책조합을 전수검사한 결정론적 그래프
+  지표이므로 유의성 검정을 적용하지 않는다(§11-6). 동일 계층 내 4개 조건 간 절대값으로만
+  보고하며, Baseline 대비 상대적 변화나 축별 평균 분해는 산출하지 않는다(§11-5). 도달성 검사는
+  3회 반복해 결과가 안정적인지(`stable`) 확인하고, 불안정하면 분석을 중단해 원인을 조사한다
+  (비율로 뭉개지 않는다, §8.5).
+- **CDS(S/O 경계 통제)**: 2×2 실험요소가 아닌 고정 Security Control이므로(§5, 논문 Table 3)
+  통계적 비교 대상이 아니다 — 네 조건 모두 `cds.rego` 하나로 사전검증만 통과하면 된다(§8.2).
 - **성능**: 4개 조건 × 12개 독립 반복 라운드 × 4개 흐름 × 3개 측정 배치 × 배치당 200회로
   측정한다. 라운드 대표값(§9) 12개를 통계 단위로 사용해 median, IQR, p95, 2,000회 부트스트랩
-  95% CI를 제시한다(`performance_summary.csv`). 라운드 순서는 균형화된 cyclic Latin square로
-  고정하며(§9), 4-way 전체 조합 간 가설검정(Mann-Whitney U 등)은 수행하지 않는다 — 목적이
-  "통계적으로 유의한 차이"가 아니라 "조건별 지연시간 분포와 그 폭"을 보여주는 것이기 때문이다.
+  95% CI를 제시한다(`performance_summary.csv`). 모드당 라운드 수가 정확히 12개가 아니면 분석을
+  중단한다(`analyze_results.py`). 라운드 순서는 균형화된 cyclic Latin square로 고정하며(§9),
+  4-way 전체 조합 간 가설검정(Mann-Whitney U 등)은 수행하지 않는다 — 목적이 "통계적으로 유의한
+  차이"가 아니라 "조건별 지연시간 분포와 그 폭"을 보여주는 것이기 때문이다.
 - 유의수준, 반복횟수, 라운드/배치 구성은 실험 전에 고정한다(`run_experiment.py`의 기본값:
   12라운드 × 3배치 × 200회).
 
@@ -537,13 +557,13 @@ blocked`)뿐 아니라 PEP/CDS 자체의 구조적 실패도 구분해서 기록
   체계로 대체해야 한다. 이 실험의 비밀키는 compose 파일에 평문으로 존재하는 lab 전용 값이다.
 - `customer_app`~`approval_app`의 18001–18005 포트는 테스트 하네스가 "실제 출발 업무"로서
   요청을 만들기 위한 진입점이며, 운영환경의 접근경로를 재현하지 않는다. 업무 간 횡적 이동
-  가능성은 이 포트가 아니라 §11의 AVOD/TINR로 측정한다.
+  가능성은 이 포트가 아니라 §11의 AOD/MPL/TINR로 측정한다.
 - 정규식 콘텐츠 검사(Transfer CDS)는 실제 DLP·백신·CDR의 대체물이 아니라 통제 흐름을 재현한
   모의 기능이며, 4장 정량 지표에는 포함하지 않는 사전검증 대상이다(§8.2).
 - OPA 입력의 `role`/`device_trust`/`purpose`는 실제 환경의 IdP, MFA, EDR, NAC, IAM/PAM 연동
   결과를 추상화한 것이다. 다만 `source_business`(출발 업무)만은 §4의 HMAC 검증을 거쳐 PEP가
   스스로 확인한 값이다.
-- AVOD/TINR은 90개 자산관계·80개 정책조합을 전수검사한 **결정론적** 그래프 지표이며 통계적
+- AOD/MPL/TINR은 90개 자산관계·80개 정책조합을 전수검사한 **결정론적** 그래프 지표이며 통계적
   추정치가 아니다(§12) — 신뢰구간·유의성 검정은 성능 지표(라운드 대표값)에만 적용한다.
 - 따라서 논문의 결론은 "특정 상용 솔루션의 성능"이 아니라 "시스템·업무 경계와 정책집행지점을
   적용했을 때 통신경로·권한·정보이동 결과가 어떻게 달라지는가"로 한정해야 한다.

@@ -9,12 +9,17 @@ import networkx as nx
 
 from common import MODES, RESULTS, read_csv, write_csv
 
-# 논문 3.4.1: 유효 통신 그래프 C_m = (A_m, V). 정점집합 V는 10개 업무자산(5개
-# 업무 x app/db)이며 PDP/PEP는 제외한다. 간선 A_m은 "두 업무자산 사이에 직접
-# TCP 통신이 가능하거나(Network Graph) PEP를 경유한 업무통신이 정책에 의해
-# 허용되는 경우(Policy Graph)"의 합집합이다. Policy Graph는 /call이 항상 App
-# 컨테이너만을 대상으로 하므로 앱 노드 사이에서만 간선을 가질 수 있다 — DB는
-# 네트워크 계층에서만(직접 TCP로만) 도달 가능하다.
+# 논문 3.4.1/3.4.2: 각 실험조건 m에 대해 네트워크 그래프 G_m^N, 정책 그래프
+# G_m^P, 유효 통신 그래프 G_m^E 세 종류의 방향성 그래프를 구성한다.
+# - Network Graph: 10개 업무자산(5개 업무 x app/db, PDP/PEP 제외)이 정점이며,
+#   두 자산 사이에 직접 TCP 통신이 가능하면 간선이다.
+# - Policy Graph: 정책집행 대상인 5개 업무 애플리케이션만 정점이다(/call은
+#   항상 App 컨테이너만을 대상으로 하므로 PEP를 경유한 정책 허용 관계는 앱
+#   노드 사이에서만 존재한다 — DB는 정책 그래프의 정점이 아니다).
+# - Effective Graph: 10개 업무자산이 정점이며, 두 그래프의 간선을 합집합한다.
+#   Network/Effective AOD는 10개 자산을 대상으로, Policy AOD는 5개
+#   애플리케이션을 대상으로 하므로 서로 다른 계층의 절대값을 직접 비교하지
+#   않는다(analyze_graph_metrics.py, README §11).
 
 
 def latest(pattern: str) -> Path | None:
@@ -85,13 +90,14 @@ def main() -> int:
     args = parser.parse_args()
     results = args.results_dir
     nodes = read_csv("assets.csv")
+    app_nodes = [n for n in nodes if n["tier"] == "app"]
 
     for mode in args.modes:
         network_edges = load_network_edges(mode, results)
         policy_edges = load_policy_edges(mode, results)
 
         network_graph = build_graph(nodes, network_edges)
-        policy_graph = build_graph(nodes, policy_edges)
+        policy_graph = build_graph(app_nodes, policy_edges)
 
         effective_graph = build_graph(nodes, [])
         for u, v in network_edges:
@@ -101,6 +107,15 @@ def main() -> int:
                 effective_graph[u][v]["policy_mediated"] = True
             else:
                 effective_graph.add_edge(u, v, direct_tcp=False, policy_mediated=True)
+
+        # 논문 3.4.2의 정점 수 정의를 그대로 방어적으로 검증한다: Network/
+        # Effective Graph는 10개 업무자산, Policy Graph는 5개 App만이어야 한다.
+        if network_graph.number_of_nodes() != 10:
+            raise RuntimeError(f"{mode}: Network Graph must contain 10 assets, got {network_graph.number_of_nodes()}")
+        if policy_graph.number_of_nodes() != 5:
+            raise RuntimeError(f"{mode}: Policy Graph must contain 5 application nodes, got {policy_graph.number_of_nodes()}")
+        if effective_graph.number_of_nodes() != 10:
+            raise RuntimeError(f"{mode}: Effective Graph must contain 10 assets, got {effective_graph.number_of_nodes()}")
 
         write_graph(network_graph, results, "network", mode)
         write_graph(policy_graph, results, "policy", mode)
